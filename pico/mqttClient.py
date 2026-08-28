@@ -1,7 +1,7 @@
 from umqtt.simple import MQTTClient
 import json
 
-BROKER = "192.168.1.36"
+BROKER = "192.168.1.169"
 
 DEVICE_ID = "CC-0001"
 

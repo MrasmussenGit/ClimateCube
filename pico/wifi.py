@@ -2,7 +2,7 @@ import network
 import time
 
 SSID = "RangerTown"
-PASSWORD = "yellowcarrot727"
+PASSWORD = "**********"
 
 def connect():
     wlan = network.WLAN(network.STA_IF)

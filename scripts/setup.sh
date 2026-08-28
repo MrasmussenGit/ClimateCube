@@ -33,7 +33,9 @@ sudo systemctl restart mosquitto
 echo
 echo "Creating Python virtual environment..."
 
-python3 -m venv .venv
+if [ ! -d .venv ]; then
+    python3 -m venv .venv
+fi
 
 echo
 echo "Installing Python dependencies..."
@@ -47,6 +49,10 @@ echo
 echo "Initializing database..."
 
 bash scripts/init_db.sh
+if [ ! -f data/climatecube.db ]; then
+    echo "ERROR: Database was not created"
+    exit 1
+fi
 
 echo
 echo "Verification"
@@ -57,11 +63,15 @@ sqlite3 --version
 
 echo
 echo "Mosquitto Listener:"
-sudo ss -tlnp | grep 1883
+sudo ss -tlnp | grep 1883 || {
+    echo "ERROR: Mosquitto not listening on port 1883"
+    exit 1
+}
 
 echo
 echo "Database Tables:"
-sqlite3 data/climatecube.db ".tables"
+TABLES=$(sqlite3 data/climatecube.db ".tables")
+echo "$TABLES"
 
 echo
 echo "===================================="
@@ -73,3 +83,13 @@ echo "To start the listener:"
 echo
 echo "source .venv/bin/activate"
 echo "python services/mqtt_listener.py"
+echo
+echo "Validation Commands:"
+echo
+echo "python services/mqtt_listener.py"
+echo
+echo "Open another terminal:"
+echo "mosquitto_sub -h localhost -t climatecube/readings -v"
+echo
+echo "Verify rows:"
+echo 'sqlite3 data/climatecube.db "SELECT COUNT(*) FROM sensor_reading;"'
