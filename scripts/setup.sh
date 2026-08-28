@@ -91,5 +91,11 @@ echo
 echo "Open another terminal:"
 echo "mosquitto_sub -h localhost -t climatecube/readings -v"
 echo
-echo "Verify rows:"
-echo 'sqlite3 data/climatecube.db "SELECT COUNT(*) FROM sensor_reading;"'
+echo
+echo "Verify Seed Data:"
+echo
+echo 'sqlite3 data/climatecube.db "SELECT * FROM sensor;"'
+echo
+echo 'sqlite3 data/climatecube.db "SELECT * FROM room;"'
+echo
+echo 'sqlite3 data/climatecube.db "SELECT * FROM room_assignment;"'
