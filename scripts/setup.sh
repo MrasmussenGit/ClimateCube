@@ -94,8 +94,13 @@ echo
 echo
 echo "Verify Seed Data:"
 echo
-echo 'sqlite3 data/climatecube.db "SELECT * FROM sensor;"'
+echo "Sensor:"
+sqlite3 data/climatecube.db "SELECT * FROM sensor;"
+
 echo
-echo 'sqlite3 data/climatecube.db "SELECT * FROM room;"'
+echo "Room:"
+sqlite3 data/climatecube.db "SELECT * FROM room;"
+
 echo
-echo 'sqlite3 data/climatecube.db "SELECT * FROM room_assignment;"'
+echo "Room Assignment:"
+sqlite3 data/climatecube.db "SELECT * FROM room_assignment;"
