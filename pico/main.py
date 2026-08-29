@@ -15,18 +15,34 @@ def log(msg):
         pass
 
 # Connect to WiFi
-wifi.connect()
+log("Starting WiFi")
+wlan = wifi.connect()
+
+if wlan is None:
+    log("WiFi Startup Failed")
+    raise Exception("WiFi startup failed")
+
+log("WiFi OK")
 
 # Sync time from NTP
-if not ntpTime.sync_time():
-    log("Failed to sync time from NTP") 
+log("Skipping NTP Sync")
 
+# Initialize RTC
+log("Initializing RTC")
 rtc = RTC()
+
+# Connect MQTT
 log("Connecting to message queue")
-mqttClient.connect()
-log("Connected to message queue")
+
+try:
+    mqttClient.connect()
+    log("Connected to message queue")
+except Exception as e:
+    log("MQTT connection failed: {}".format(e))
+    raise
+
 log("Monitor Started")
-log("----------------------")
+log("----------------------------")
 
 while True:
     data = sensor.GetTempData()

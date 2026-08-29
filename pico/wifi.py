@@ -1,8 +1,8 @@
 import network
 import time
 
-SSID = "RangerTown"
-PASSWORD = "YOUR_PASSWORD"
+SSID = "changeme"
+PASSWORD = "changeme"
 
 
 def log(msg):
@@ -16,12 +16,14 @@ def log(msg):
 
 
 def connect():
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
 
-    log("--------------------------------")
+    wlan = network.WLAN(network.STA_IF)
+
+    log("----------------------------")
     log("WiFi Startup")
-    log("--------------------------------")
+    log("----------------------------")
+
+    wlan.active(True)
 
     # Already connected?
     if wlan.isconnected():
@@ -32,48 +34,78 @@ def connect():
             log("IP Address: {}".format(ip))
             return wlan
 
-    log("Connecting to WiFi...")
-    wlan.connect(SSID, PASSWORD)
+    max_attempts = 5
 
-    timeout = 15
+    for attempt in range(max_attempts):
 
-    while timeout > 0:
+        log("----------------------------")
+        log("WiFi connection attempt {}".format(attempt + 1))
+        log("----------------------------")
+
+        try:
+            wlan.disconnect()
+        except Exception:
+            pass
+
+        # Reset radio between attempts
+        wlan.active(False)
+        time.sleep(2)
+
+        wlan.active(True)
+        time.sleep(2)
+
+        log("Connecting to WiFi...")
+        wlan.connect(SSID, PASSWORD)
+
+        timeout = 15
+
+        while timeout > 0:
+
+            if wlan.isconnected():
+                break
+
+            log("Waiting for WiFi...")
+            timeout -= 1
+            time.sleep(1)
+
         if wlan.isconnected():
-            break
 
-        log("Waiting for WiFi...")
-        timeout -= 1
-        time.sleep(1)
+            log("WiFi associated")
 
-    if not wlan.isconnected():
-        log("WiFi connection failed")
-        return None
+            log("Waiting for DHCP lease...")
 
-    log("WiFi associated")
+            dhcp_timeout = 30
 
-    # Wait for DHCP
-    log("Waiting for DHCP lease...")
+            while dhcp_timeout > 0:
 
-    dhcp_timeout = 15
+                ip = wlan.ifconfig()[0]
 
-    while dhcp_timeout > 0:
-        ip = wlan.ifconfig()[0]
+                log("Current IP: {}".format(ip))
 
-        if ip != "0.0.0.0":
-            break
+                if ip != "0.0.0.0":
+                    break
 
-        log("Waiting for DHCP...")
-        dhcp_timeout -= 1
-        time.sleep(1)
+                log("Waiting for DHCP...")
+                dhcp_timeout -= 1
+                time.sleep(1)
 
-    ip = wlan.ifconfig()[0]
+            ip = wlan.ifconfig()[0]
 
-    if ip == "0.0.0.0":
-        log("DHCP failed")
-        return None
+            if ip != "0.0.0.0":
 
-    log("Connected!")
-    log("IP Address: {}".format(ip))
-    log("Network Config: {}".format(wlan.ifconfig()))
+                log("Connected!")
+                log("IP Address: {}".format(ip))
+                log("Network Config: {}".format(wlan.ifconfig()))
 
-    return wlan
+                return wlan
+
+            log("DHCP failed")
+
+        log("WiFi Status: {}".format(wlan.status()))
+        log("WiFi connection attempt failed")
+
+        time.sleep(5)
+
+    log("WiFi connection failed")
+
+    return None
