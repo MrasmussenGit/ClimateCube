@@ -1,27 +1,27 @@
-OS Packages
------------
-git
-sqlite3
-mosquitto
-mosquitto-clients
-python3-venv
+Copilot said:
 
+ClimateCube Hub Imaging Guide
 
-Python Packages
----------------
-paho-mqtt
-mpremote
-pyserial
-bme280
-smbus2
-platformdirs
+Prerequisites
 
+Raspberry Pi OS Lite
 
-Steps
------
-Install Raspberry Pi OS Lite
+During imaging:
 
-Enable SSH - during imaging
+Configure WiFi
+Enable SSH
+
+Verify Connectivity
+
+SSH to the Pi:
+
+ssh localadmin@
+
+Verify Internet access:
+
+ping github.com
+
+Install Git
 
 sudo apt update
 
@@ -29,101 +29,182 @@ sudo apt upgrade -y
 
 sudo apt install -y git
 
-sudo apt install -y sqlite3
-
-sudo apt install -y mosquitto mosquitto-clients
-
-sudo apt install -y python3-venv
+Clone ClimateCube
 
 git clone https://github.com/MrasmussenGit/ClimateCube.git
 
 cd ClimateCube
 
-python3 -m venv .venv
+Run Setup
 
-source .venv/bin/activate
+chmod +x scripts/setup.sh
 
-pip install -r requirements.txt
+./scripts/setup.sh
 
-Configure Mosquitto for network clients
+Setup performs:
 
-sudo tee /etc/mosquitto/conf.d/climatecube.conf > /dev/null <<EOF
-listener 1883
-allow_anonymous true
-EOF
+Install sqlite3
+Install mosquitto
+Install mosquitto-clients
+Install python3-venv
+Create Python virtual environment
+Install Python packages
+Configure Mosquitto listener
+Create database
+Create tables
+Seed database
 
-sudo systemctl restart mosquitto
+Verify Database
 
-Verify Mosquitto Configuration
-
-sudo ss -tlnp | grep 1883
-
-Expected:
-0.0.0.0:1883
-
-Create data folder
-
-mkdir -p data
-
-Initialize database
-
-bash scripts/init_db.sh
-
-Verify database exists
-
-ls data
-
-Expected:
-climatecube.db
-
-Verify tables exist
+Verify tables:
 
 sqlite3 data/climatecube.db ".tables"
 
 Expected:
+
 room
-room_assignment
-sensor
-sensor_reading
+ room_assignment
+ sensor
+ sensor_reading
 
-(Optional Recovery Scenario)
-Move replacement Pi to production IP
+Verify sensor seed:
 
-sudo nmcli connection modify netplan-wlan0-RangerTown \
-ipv4.addresses 192.168.1.36/24 \
-ipv4.gateway 192.168.1.1 \
-ipv4.dns "8.8.8.8 1.1.1.1" \
-ipv4.method manual
-
-sudo reboot
-
-Verify IP
-
-hostname -I
+sqlite3 data/climatecube.db "SELECT * FROM sensor;"
 
 Expected:
-192.168.1.36
 
-Start MQTT listener
+1|CC-0001|ClimateCube #1|BME280||1
+
+Verify room seed:
+
+sqlite3 data/climatecube.db "SELECT * FROM room;"
+
+Expected:
+
+1|Living Room|Main living area
+
+Verify room assignment seed:
+
+sqlite3 data/climatecube.db "SELECT * FROM room_assignment;"
+
+Expected:
+
+1|1|1|...
+
+Verify Mosquitto
+
+sudo ss -tlnp | grep 1883
+
+Expected:
+
+0.0.0.0:1883
+
+Start ClimateCube Listener
 
 source .venv/bin/activate
 
 python services/mqtt_listener.py
 
-Verify MQTT traffic
+Expected:
 
-Open second terminal
+Listening for ClimateCube messages...
+
+Verify MQTT Traffic
+
+Open a second SSH session:
 
 mosquitto_sub -h localhost -t climatecube/readings -v
 
 Expected:
+
 climatecube/readings {...}
 
-Verify database inserts
+Verify Database Inserts
 
 sqlite3 data/climatecube.db
 
 SELECT COUNT(*) FROM sensor_reading;
 
 Expected:
+
 Count increases as Pico readings arrive.
+
+Known Issues
+
+Pico WiFi Startup
+
+Occasionally the Pico does not associate with WiFi on the first connection attempt.
+
+Current behavior:
+
+Pico boots
+ ↓
+ WiFi retry logic runs
+ ↓
+ Connection succeeds automatically
+
+Boot diagnostics are written to:
+
+boot.log
+
+on the Pico.
+
+NTP Synchronization
+
+NTP synchronization is currently disabled until timeout and retry handling are improved.
+
+Current recommendation:
+
+Use insert_ts for trusted timestamps.
+
+Store pico_ts from the sensor separately.
+
+Recovery Validation Status
+
+Validated:
+
+✅ Fresh Raspberry Pi OS Lite
+
+✅ Git clone from GitHub
+
+✅ setup.sh execution
+
+✅ Database creation
+
+✅ Seed data creation
+
+✅ Mosquitto configuration
+
+✅ MQTT listener operation
+
+✅ Pico reconnection
+
+✅ Data insertion into SQLite
+
+✅ Full rebuild from blank SD card
+
+✅ Recovery from hub replacement scenario
+
+Current Install Process
+
+sudo apt update
+
+sudo apt upgrade -y
+
+sudo apt install -y git
+
+git clone https://github.com/MrasmussenGit/ClimateCube.git
+
+cd ClimateCube
+
+chmod +x scripts/setup.sh
+
+./scripts/setup.sh
+
+source .venv/bin/activate
+
+python services/mqtt_listener.py
+
+Outcome:
+
+Fresh Pi → Setup → MQTT Listener → Pico → SQLite Database ✅
