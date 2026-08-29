@@ -5,17 +5,28 @@ import time
 import mqttClient
 from machine import RTC
 
+def log(msg):
+    print(msg)
+
+    try:
+        with open("boot.log", "a") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
 # Connect to WiFi
 wifi.connect()
 
 # Sync time from NTP
-ntpTime.sync_time()
+if not ntpTime.sync_time():
+    log("Failed to sync time from NTP") 
+
 rtc = RTC()
-print("Connecting to message queue")
+log("Connecting to message queue")
 mqttClient.connect()
-print("Connected to message queue")
-print("Monitor Started")
-print("----------------------")
+log("Connected to message queue")
+log("Monitor Started")
+log("----------------------")
 
 while True:
     data = sensor.GetTempData()
@@ -41,10 +52,11 @@ while True:
         "pressure_hpa": data["pressure_hpa"]
     }
 
-    print(timestamp)
-    print(f"Temp = {data['temperature_c']} C")
-    print(f"Humidity = {data['humidity_pct']} %")
-    print(f"Pressure = {data['pressure_hpa']} hPa")
-    print()
+    log(timestamp)
+    log(f"Temp = {data['temperature_c']} C")
+    log(f"Humidity = {data['humidity_pct']} %")
+    log(f"Pressure = {data['pressure_hpa']} hPa")
+    log("")
     mqttClient.publish_reading(payload)
+    log("Reading published")
     time.sleep(10)

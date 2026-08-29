@@ -3,10 +3,14 @@ import time
 
 def sync_time():
     try:
-        print("Syncing time...")
+        log("Syncing time...")
+
         ntptime.settime()
-        print("Time synced")
+
+        log("Time synced")
+
         return True
+
     except Exception as e:
-        print("NTP sync failed:", e)
+        log("NTP sync failed: {}".format(e))
         return False

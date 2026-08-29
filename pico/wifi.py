@@ -2,47 +2,59 @@ import network
 import time
 
 SSID = "RangerTown"
-PASSWORD = "************"
+PASSWORD = "YOUR_PASSWORD"
+
+
+def log(msg):
+    print(msg)
+
+    try:
+        with open("boot.log", "a") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
 
 
 def connect():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
 
+    log("--------------------------------")
+    log("WiFi Startup")
+    log("--------------------------------")
+
+    # Already connected?
     if wlan.isconnected():
         ip = wlan.ifconfig()[0]
 
         if ip != "0.0.0.0":
-            print("Already connected")
-            print("IP Address:", ip)
+            log("Already connected")
+            log("IP Address: {}".format(ip))
             return wlan
 
-    print("Connecting to WiFi...")
+    log("Connecting to WiFi...")
     wlan.connect(SSID, PASSWORD)
 
     timeout = 15
 
     while timeout > 0:
         if wlan.isconnected():
-            ip = wlan.ifconfig()[0]
+            break
 
-            if ip != "0.0.0.0":
-                break
-
-        print(".", end="")
+        log("Waiting for WiFi...")
         timeout -= 1
         time.sleep(1)
 
-    print()
-
     if not wlan.isconnected():
-        print("WiFi connection failed")
+        log("WiFi connection failed")
         return None
 
-    print("WiFi associated")
-    print("Waiting for DHCP...")
+    log("WiFi associated")
 
-    dhcp_timeout = 10
+    # Wait for DHCP
+    log("Waiting for DHCP lease...")
+
+    dhcp_timeout = 15
 
     while dhcp_timeout > 0:
         ip = wlan.ifconfig()[0]
@@ -50,20 +62,18 @@ def connect():
         if ip != "0.0.0.0":
             break
 
-        print(".", end="")
+        log("Waiting for DHCP...")
         dhcp_timeout -= 1
         time.sleep(1)
-
-    print()
 
     ip = wlan.ifconfig()[0]
 
     if ip == "0.0.0.0":
-        print("DHCP failed")
+        log("DHCP failed")
         return None
 
-    print("Connected!")
-    print("IP Address:", ip)
-    print("Network Config:", wlan.ifconfig())
+    log("Connected!")
+    log("IP Address: {}".format(ip))
+    log("Network Config: {}".format(wlan.ifconfig()))
 
     return wlan
