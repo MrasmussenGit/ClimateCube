@@ -50,13 +50,15 @@ CREATE TABLE room_assignment (
 -- ==========================================
 
 CREATE TABLE sensor_reading (
-    reading_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    sensor_id      INTEGER NOT NULL,
-    reading_ts     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sensor_id INTEGER NOT NULL,
+
+    pico_ts DATETIME,
+    insert_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     temperature_c REAL NOT NULL,
-    humidity_pct  REAL NOT NULL,
-    pressure_hpa  REAL NOT NULL,
+    humidity_pct REAL NOT NULL,
+    pressure_hpa REAL NOT NULL,
 
     FOREIGN KEY (sensor_id)
         REFERENCES sensor(sensor_id)
@@ -67,4 +69,4 @@ CREATE TABLE sensor_reading (
 -- ==========================================
 
 CREATE INDEX idx_sensor_reading_sensor_time
-ON sensor_reading(sensor_id, reading_ts);
+ON sensor_reading(sensor_id, pico_ts);
