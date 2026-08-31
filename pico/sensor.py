@@ -1,7 +1,7 @@
 from machine import Pin, I2C
 import bme280
 
-i2c = I2C(0, scl=Pin(5), sda=Pin(4))
+v
 bme = bme280.BME280(i2c=i2c, address=0x76)
 
 def GetTempData():

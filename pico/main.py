@@ -3,6 +3,7 @@ import ntpTime
 import sensor
 import time
 import mqttClient
+import display
 from machine import RTC
 
 def log(msg):
@@ -24,6 +25,9 @@ if wlan is None:
 
 log("WiFi OK")
 
+log("Setting up display")
+display.init()
+log("Display initialized")
 # Sync time from NTP
 log("Skipping NTP Sync")
 
