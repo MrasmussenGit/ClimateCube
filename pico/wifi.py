@@ -1,8 +1,9 @@
 import network
 import time
 
-SSID = "changeme"
-PASSWORD = "changeme"
+from config import SSID, PASSWORD
+
+
 
 
 def log(msg):
