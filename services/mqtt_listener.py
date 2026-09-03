@@ -39,7 +39,7 @@ def on_message(client, userdata, msg):
         INSERT INTO sensor_reading
         (
             sensor_id,
-            reading_ts,
+            pico_ts,
             temperature_c,
             humidity_pct,
             pressure_hpa
