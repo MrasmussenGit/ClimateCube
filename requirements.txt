@@ -5,3 +5,4 @@ platformdirs==4.11.4
 pyserial==3.5
 smbus2==0.6.1
 flask
+gunicorn
