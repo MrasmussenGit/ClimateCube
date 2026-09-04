@@ -23,6 +23,15 @@ if [ ! -f pico/config.py ]; then
     echo ""
 fi
 
+# Create firmware folder if missing
+if [ ! -d firmware ]; then
+
+    echo ""
+    echo "Creating firmware directory..."
+    mkdir firmware
+
+fi
+
 echo
 echo "Installing OS packages..."
 
