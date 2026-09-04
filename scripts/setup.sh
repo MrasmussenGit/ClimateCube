@@ -99,6 +99,47 @@ TABLES=$(sqlite3 data/climatecube.db ".tables")
 echo "$TABLES"
 
 echo
+echo "Configuring ClimateCube web server..."
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVICE_USER="${SUDO_USER:-$(id -un)}"
+
+sudo tee /etc/systemd/system/climatecube-web.service > /dev/null <<EOF
+[Unit]
+Description=ClimateCube Flask Web Server
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SERVICE_USER
+WorkingDirectory=$PROJECT_DIR
+ExecStart=$PROJECT_DIR/.venv/bin/gunicorn \
+    --workers 1 \
+    --bind 0.0.0.0:5000 \
+    services.web_server:app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable climatecube-web
+sudo systemctl restart climatecube-web
+
+echo
+echo "ClimateCube Web Server:"
+sudo systemctl is-active --quiet climatecube-web || {
+    echo "ERROR: ClimateCube web server failed to start"
+    sudo systemctl status climatecube-web --no-pager
+    exit 1
+}
+
+echo "Web server running on port 5000"
+
+echo
 echo "===================================="
 echo "ClimateCube Setup Complete"
 echo "===================================="
