@@ -46,14 +46,16 @@ def on_message(client, userdata, msg):
                 sensor_name,
                 sensor_type,
                 install_date,
+                ip_address,
                 active_flag
             )
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
             """,
             (
                 payload["device_id"],
                 display_name,
                 "BME280",
+                payload["ip_address"],
                 1
             )
         )
@@ -69,6 +71,18 @@ def on_message(client, userdata, msg):
     else:
 
         sensor_id = row[0]
+
+        cursor.execute(
+            """
+            UPDATE sensor
+            SET ip_address = ?
+            WHERE sensor_id = ?
+            """,
+            (
+                payload["ip_address"],
+                sensor_id
+            )
+        )
 
     cursor.execute(
         """

@@ -24,8 +24,14 @@ wlan = wifi.connect()
 if wlan is None:
     log("WiFi Startup Failed")
     raise Exception("WiFi startup failed")
+ip_address = wlan.ifconfig()[0]
+
+if not wlan.isconnected() or not ip_address or ip_address == "0.0.0.0":
+    log("No valid IP address")
+    raise Exception("No valid IP address")
 
 log("WiFi OK")
+log("IP Address: {}".format(ip_address))
 
 log("Syncing time")
 
@@ -78,11 +84,12 @@ while True:
     )
 
     payload = {
-        "device_id": "CC-0001",
-        "timestamp": timestamp,
-        "temperature_c": data["temperature_c"],
-        "humidity_pct": data["humidity_pct"],
-        "pressure_hpa": data["pressure_hpa"]
+    "device_id": "CC-0001",
+    "ip_address": ip_address,
+    "timestamp": timestamp,
+    "temperature_c": data["temperature_c"],
+    "humidity_pct": data["humidity_pct"],
+    "pressure_hpa": data["pressure_hpa"]
     }
 
     log(timestamp)
