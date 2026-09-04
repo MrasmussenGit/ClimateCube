@@ -7,6 +7,22 @@ echo "===================================="
 echo "ClimateCube Setup"
 echo "===================================="
 
+# Create config.py if missing
+if [ ! -f pico/config.py ]; then
+    echo ""
+    echo "Creating pico/config.py from template..."
+    cp pico/config_template.py pico/config.py
+
+    echo ""
+    echo "IMPORTANT:"
+    echo "Edit pico/config.py and populate:"
+    echo "  SSID"
+    echo "  PASSWORD"
+    echo "  BROKER"
+    echo "  READING_INTERVAL_SEC"
+    echo ""
+fi
+
 echo
 echo "Installing OS packages..."
 
