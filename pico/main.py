@@ -4,7 +4,9 @@ import sensor
 import time
 import mqttClient
 import display
+import device
 from machine import RTC
+from config import READING_INTERVAL_SEC
 
 def log(msg):
     print(msg)
@@ -25,11 +27,16 @@ if wlan is None:
 
 log("WiFi OK")
 
+log("Syncing time")
+
+if ntpTime.sync_time():
+    log("Time synced")
+else:
+    log("Time sync failed")
+
 log("Setting up display")
 display.init()
 log("Display initialized")
-# Sync time from NTP
-log("Skipping NTP Sync")
 
 # Initialize RTC
 log("Initializing RTC")
@@ -45,15 +52,21 @@ except Exception as e:
     log("MQTT connection failed: {}".format(e))
     raise
 
+log(
+    "Device ID: {}".format(
+        device.get_device_id()
+    )
+)
+
 log("Monitor Started")
 log("----------------------------")
 
 while True:
     data = sensor.GetTempData()
-
     dt = rtc.datetime()
+    display.update(data, dt)
 
-    hour = (dt[4] - 4) % 24
+    hour = dt[4]
 
     timestamp = "{}-{:02}-{:02}T{:02}:{:02}:{:02}".format(
         dt[0],  # year
@@ -78,5 +91,4 @@ while True:
     log(f"Pressure = {data['pressure_hpa']} hPa")
     log("")
     mqttClient.publish_reading(payload)
-    log("Reading published")
-    time.sleep(10)
+    time.sleep(READING_INTERVAL_SEC)

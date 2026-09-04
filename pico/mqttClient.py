@@ -1,9 +1,10 @@
 from umqtt.simple import MQTTClient
 import json
+import device
 
-from config import BROKER
+from config import BROKER, READING_INTERVAL_SEC
 
-DEVICE_ID = "CC-0001"
+DEVICE_ID = device.get_device_id()
 
 TOPIC = "climatecube/readings"
 
@@ -25,3 +26,8 @@ def publish_reading(payload):
     )
 
     print("Reading published")
+    print(
+        "Next reading in {} seconds".format(
+            READING_INTERVAL_SEC
+        )
+    )

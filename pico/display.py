@@ -1,7 +1,9 @@
 from machine import Pin, I2C
 from ssd1306 import SSD1306_I2C
+import device
 
 oled = None
+page = 0
 
 
 def init():
@@ -17,19 +19,80 @@ def init():
     oled.show()
 
 
-#def update(temp_f, humidity, pressure):
+def update(data, dt):
 
-    #oled.fill(0)
+    temp_c = data["temperature_c"]
+    temp_f = (temp_c * 9 / 5) + 32
 
-    #oled.text("ClimateCube", 0, 0)
+    humidity = data["humidity_pct"]
+    pressure = data["pressure_hpa"]
 
-    #oled.text("Temp:", 0, 18)
-    #oled.text(f"{temp_f:.1f}F", 60, 18)
+    hour = (dt[4] - 4) % 24
+    minute = dt[5]
 
-    #oled.text("Hum:", 0, 34)
-    #oled.text(f"{humidity:.1f}%", 60, 34)
+    oled.fill(0)
 
-    #oled.text("Pres:", 0, 50)
-    #oled.text(f"{pressure:.1f}", 40, 50)
+    # Top row
+    oled.text(
+        device.get_display_id(),
+        0,
+        0
+    )
 
-    #oled.show()
+    oled.text(
+        "{:02}:{:02}".format(hour, minute),
+        82,
+        0
+    )
+
+    # Readings
+    oled.text("T: {:.1f}F".format(temp_f), 0, 18)
+    oled.text("H: {:.1f}%".format(humidity), 0, 34)
+    oled.text("P: {:.0f}".format(pressure), 0, 50)
+
+    oled.show()
+
+
+def show_temperature(data):
+
+    temp_c = data["temperature_c"]
+    temp_f = (temp_c * 9 / 5) + 32
+
+    oled.fill(0)
+
+    oled.text("Temperature", 0, 0)
+    oled.text("{:.1f} F".format(temp_f), 0, 24)
+
+    oled.show()
+
+
+def show_humidity(data):
+
+    oled.fill(0)
+
+    oled.text("Humidity", 0, 0)
+    oled.text(
+        "{:.1f}%".format(
+            data["humidity_pct"]
+        ),
+        0,
+        24
+    )
+
+    oled.show()
+
+
+def show_pressure(data):
+
+    oled.fill(0)
+
+    oled.text("Pressure", 0, 0)
+    oled.text(
+        "{:.1f}".format(
+            data["pressure_hpa"]
+        ),
+        0,
+        24
+    )
+
+    oled.show()
