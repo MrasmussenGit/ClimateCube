@@ -19,12 +19,14 @@ CREATE TABLE room (
 -- ==========================================
 
 CREATE TABLE sensor (
-    sensor_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id     TEXT NOT NULL UNIQUE,
-    sensor_name   TEXT NOT NULL,
-    sensor_type   TEXT NOT NULL,
-    install_date  TEXT,
-    active_flag   INTEGER NOT NULL DEFAULT 1
+    sensor_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id      TEXT NOT NULL UNIQUE,
+    sensor_name    TEXT NOT NULL,
+    sensor_type    TEXT NOT NULL,
+    install_date   TEXT,
+    ip_address     TEXT,
+    active_flag    INTEGER NOT NULL DEFAULT 1,
+    first_seen_ts  TEXT
 );
 
 -- ==========================================

@@ -9,6 +9,7 @@ DB_FILE = "data/climatecube.db"
 def on_message(client, userdata, msg):
 
     print("MESSAGE RECEIVED")
+
     payload = json.loads(msg.payload.decode())
 
     print(f"Received: {payload}")
@@ -28,11 +29,46 @@ def on_message(client, userdata, msg):
     row = cursor.fetchone()
 
     if row is None:
-        print("Unknown device")
-        conn.close()
-        return
 
-    sensor_id = row[0]
+        print(
+            f"Auto-registering device {payload['device_id']}"
+        )
+
+        display_name = (
+            f"ClimateCube {payload['device_id'][-6:]}"
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO sensor
+            (
+                device_id,
+                sensor_name,
+                sensor_type,
+                install_date,
+                active_flag
+            )
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """,
+            (
+                payload["device_id"],
+                display_name,
+                "BME280",
+                1
+            )
+        )
+
+        conn.commit()
+
+        sensor_id = cursor.lastrowid
+
+        print(
+            f"Registered as sensor_id {sensor_id}"
+        )
+
+    else:
+
+        sensor_id = row[0]
 
     cursor.execute(
         """

@@ -1,10 +1,1 @@
-INSERT INTO sensor (
-    device_id,
-    sensor_name,
-    sensor_type
-)
-VALUES (
-    'CC-0001',
-    'ClimateCube #1',
-    'BME280'
-);
+-- Devices are auto-registered by mqtt_listener.py

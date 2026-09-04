@@ -9,7 +9,6 @@ mkdir -p data
 rm -f data/climatecube.db
 
 sqlite3 data/climatecube.db < db/create_database.sql
-sqlite3 data/climatecube.db < db/seed_sensors.sql
 sqlite3 data/climatecube.db < db/seed_data.sql
 
 echo "Database initialized."
