@@ -7,6 +7,9 @@ echo "===================================="
 echo "ClimateCube Setup"
 echo "===================================="
 
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVICE_USER="${SUDO_USER:-$(id -un)}"
+
 # Create config.py if missing
 if [ ! -f pico/config.py ]; then
     echo ""
@@ -99,10 +102,42 @@ TABLES=$(sqlite3 data/climatecube.db ".tables")
 echo "$TABLES"
 
 echo
-echo "Configuring ClimateCube web server..."
+echo "Configuring ClimateCube MQTT listener..."
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVICE_USER="${SUDO_USER:-$(id -un)}"
+sudo tee /etc/systemd/system/climatecube-listener.service > /dev/null <<EOF
+[Unit]
+Description=ClimateCube MQTT Listener
+After=network-online.target mosquitto.service
+Wants=network-online.target
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=$SERVICE_USER
+WorkingDirectory=$PROJECT_DIR
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$PROJECT_DIR/.venv/bin/python services/mqtt_listener.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable climatecube-listener
+sudo systemctl restart climatecube-listener
+
+echo
+echo "ClimateCube MQTT Listener:"
+sudo systemctl is-active --quiet climatecube-listener || {
+    echo "ERROR: ClimateCube MQTT listener failed to start"
+    sudo systemctl status climatecube-listener --no-pager
+    exit 1
+}
+
+echo
+echo "Configuring ClimateCube web server..."
 
 sudo tee /etc/systemd/system/climatecube-web.service > /dev/null <<EOF
 [Unit]
@@ -138,6 +173,12 @@ sudo systemctl is-active --quiet climatecube-web || {
 }
 
 echo "Web server running on port 5000"
+
+echo
+echo "Service Status:"
+echo "Mosquitto:     $(systemctl is-active mosquitto)"
+echo "MQTT Listener: $(systemctl is-active climatecube-listener)"
+echo "Web Server:    $(systemctl is-active climatecube-web)"
 
 echo
 echo "===================================="
