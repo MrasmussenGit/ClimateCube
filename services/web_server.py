@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 import socket
 
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, abort, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
@@ -54,6 +54,74 @@ def get_latest_readings():
         )
         ORDER BY s.sensor_name
         """
+    ).fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
+HISTORY_RANGES = {
+    "6h": ("-6 hours", 60),
+    "24h": ("-24 hours", 300),
+    "3d": ("-3 days", 900),
+    "7d": ("-7 days", 1800)
+}
+
+
+def get_sensor(sensor_id):
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+
+    row = conn.execute(
+        """
+        SELECT sensor_id, sensor_name, device_id, ip_address
+        FROM sensor
+        WHERE sensor_id = ?
+        """,
+        (sensor_id,)
+    ).fetchone()
+
+    conn.close()
+
+    return dict(row) if row else None
+
+
+def get_temperature_history(sensor_id, range_name):
+    modifier, bucket_seconds = HISTORY_RANGES[range_name]
+
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+
+    rows = conn.execute(
+        """
+        WITH latest AS
+        (
+            SELECT MAX(COALESCE(pico_ts, insert_ts)) AS latest_ts
+            FROM sensor_reading
+            WHERE sensor_id = ?
+        )
+        SELECT
+            MAX(COALESCE(r.pico_ts, r.insert_ts)) AS reading_time,
+            AVG(r.temperature_c) AS temperature_c
+        FROM sensor_reading AS r
+        CROSS JOIN latest
+        WHERE r.sensor_id = ?
+          AND datetime(
+                replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+              ) >= datetime(
+                replace(latest.latest_ts, 'T', ' '), ?
+              )
+        GROUP BY
+            CAST(
+                strftime(
+                    '%s',
+                    replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                ) AS INTEGER
+            ) / ?
+        ORDER BY reading_time
+        """,
+        (sensor_id, sensor_id, modifier, bucket_seconds)
     ).fetchall()
 
     conn.close()
@@ -163,6 +231,18 @@ DASHBOARD = """
             font-size: 13px;
         }
 
+        .history-link {
+            display: inline-block;
+            margin-top: 18px;
+            color: #243447;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        .history-link:hover {
+            text-decoration: underline;
+        }
+
         .empty {
             padding: 20px;
             background: white;
@@ -232,6 +312,13 @@ DASHBOARD = """
                     <div class="timestamp">
                         Reading time: {{ reading.reading_time }}
                     </div>
+
+                    <a
+                        class="history-link"
+                        href="/history/{{ reading.sensor_id }}"
+                    >
+                        View temperature history →
+                    </a>
                 </section>
             {% endfor %}
         </div>
@@ -299,6 +386,238 @@ DASHBOARD = """
 """
 
 
+HISTORY_PAGE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>{{ sensor.sensor_name }} History</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 30px;
+            background: #eef2f6;
+            color: #243447;
+            font-family: Arial, sans-serif;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .back-link {
+            color: #243447;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 24px 0;
+        }
+
+        button {
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 8px;
+            background: #d8e0e8;
+            color: #243447;
+            font-size: 15px;
+            cursor: pointer;
+        }
+
+        button.active,
+        #unit-button {
+            background: #243447;
+            color: white;
+        }
+
+        .chart-card {
+            height: 460px;
+            padding: 22px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+        }
+
+        .details,
+        .status {
+            color: #667788;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 18px;
+            }
+
+            .chart-card {
+                height: 360px;
+                padding: 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <a class="back-link" href="/">← Current readings</a>
+
+    <div class="header">
+        <div>
+            <h1>{{ sensor.sensor_name }}</h1>
+            <p class="details">
+                Temperature history · {{ sensor.device_id }}
+            </p>
+        </div>
+
+        <button id="unit-button" type="button">Show °F</button>
+    </div>
+
+    <div class="controls">
+        <button class="range-button" data-range="6h">6 hours</button>
+        <button class="range-button active" data-range="24h">24 hours</button>
+        <button class="range-button" data-range="3d">3 days</button>
+        <button class="range-button" data-range="7d">7 days</button>
+    </div>
+
+    <div class="chart-card">
+        <canvas id="temperature-chart"></canvas>
+    </div>
+
+    <p id="status" class="status">Loading history...</p>
+
+    <script>
+        const sensorId = {{ sensor.sensor_id }};
+        const unitButton = document.getElementById("unit-button");
+        const rangeButtons = document.querySelectorAll(".range-button");
+        const status = document.getElementById("status");
+        let temperatureUnit =
+            localStorage.getItem("temperatureUnit") || "C";
+        let currentRange = "24h";
+        let historyReadings = [];
+
+        const chart = new Chart(
+            document.getElementById("temperature-chart"),
+            {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: "Temperature",
+                        data: [],
+                        borderColor: "#d35400",
+                        backgroundColor: "rgba(211, 84, 0, 0.12)",
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.15,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: "index"
+                    },
+                    scales: {
+                        x: {
+                            ticks: { maxTicksLimit: 10 }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: "Temperature (°C)"
+                            }
+                        }
+                    }
+                }
+            }
+        );
+
+        function updateChart() {
+            const useFahrenheit = temperatureUnit === "F";
+
+            chart.data.labels = historyReadings.map(function (reading) {
+                return reading.reading_time.replace("T", " ");
+            });
+
+            chart.data.datasets[0].data = historyReadings.map(
+                function (reading) {
+                    const celsius = Number(reading.temperature_c);
+                    return useFahrenheit
+                        ? (celsius * 9 / 5) + 32
+                        : celsius;
+                }
+            );
+
+            chart.options.scales.y.title.text =
+                "Temperature (°" + temperatureUnit + ")";
+            unitButton.textContent =
+                useFahrenheit ? "Show °C" : "Show °F";
+            chart.update();
+        }
+
+        async function loadHistory() {
+            status.textContent = "Loading history...";
+
+            try {
+                const response = await fetch(
+                    "/api/history/" + sensorId + "?range=" + currentRange
+                );
+
+                if (!response.ok) {
+                    throw new Error("History request failed");
+                }
+
+                const result = await response.json();
+                historyReadings = result.readings;
+                updateChart();
+                status.textContent = historyReadings.length
+                    ? historyReadings.length + " chart points"
+                    : "No readings found for this period.";
+            } catch (error) {
+                status.textContent = "Unable to load temperature history.";
+            }
+        }
+
+        rangeButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                rangeButtons.forEach(function (item) {
+                    item.classList.remove("active");
+                });
+
+                button.classList.add("active");
+                currentRange = button.dataset.range;
+                loadHistory();
+            });
+        });
+
+        unitButton.addEventListener("click", function () {
+            temperatureUnit = temperatureUnit === "C" ? "F" : "C";
+            localStorage.setItem("temperatureUnit", temperatureUnit);
+            updateChart();
+        });
+
+        loadHistory();
+    </script>
+</body>
+</html>
+"""
+
+
 @app.route("/")
 def dashboard():
     return render_template_string(
@@ -311,6 +630,41 @@ def dashboard():
 @app.route("/api/latest")
 def latest_api():
     return jsonify(get_latest_readings())
+
+
+@app.route("/history/<int:sensor_id>")
+def history(sensor_id):
+    sensor = get_sensor(sensor_id)
+
+    if sensor is None:
+        abort(404)
+
+    return render_template_string(
+        HISTORY_PAGE,
+        sensor=sensor
+    )
+
+
+@app.route("/api/history/<int:sensor_id>")
+def history_api(sensor_id):
+    sensor = get_sensor(sensor_id)
+
+    if sensor is None:
+        abort(404)
+
+    range_name = request.args.get("range", "24h")
+
+    if range_name not in HISTORY_RANGES:
+        return jsonify({
+            "error": "Invalid range",
+            "valid_ranges": list(HISTORY_RANGES)
+        }), 400
+
+    return jsonify({
+        "sensor": sensor,
+        "range": range_name,
+        "readings": get_temperature_history(sensor_id, range_name)
+    })
 
 
 if __name__ == "__main__":
