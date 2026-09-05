@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ClimateCube Settings</title>
+    <style>
+        body { margin: 0; padding: 30px; background: #eef2f6; color: #243447; font-family: Arial, sans-serif; }
+        .page { max-width: 900px; margin: 0 auto; }
+        .back-link { color: #243447; font-weight: bold; text-decoration: none; }
+        .subtitle, .sensor-details, .last-reading { color: #667788; }
+        .notice { margin: 18px 0; padding: 12px 16px; border-radius: 8px; }
+        .success { background: #dff3e4; color: #236b35; }
+        .error { background: #f9dddd; color: #8a2727; }
+        .sensor-list { display: grid; gap: 16px; margin-top: 24px; }
+        .sensor-card { padding: 22px; background: white; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); }
+        .sensor-card h2 { margin-top: 0; margin-bottom: 8px; }
+        .name-form { display: flex; gap: 10px; margin-top: 18px; }
+        .name-form input { min-width: 0; flex: 1; padding: 11px 12px; border: 1px solid #b9c4ce; border-radius: 8px; color: #243447; font-size: 16px; }
+        .name-form button { padding: 11px 18px; border: 0; border-radius: 8px; background: #243447; color: white; font-size: 16px; cursor: pointer; }
+        .last-reading { margin-bottom: 0; font-size: 13px; }
+        @media (max-width: 600px) {
+            body { padding: 18px; }
+            .name-form { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <a class="back-link" href="{{ url_for('dashboard') }}">← Current readings</a>
+        <h1>Sensor settings</h1>
+        <p class="subtitle">Give each ClimateCube a friendly location name.</p>
+
+        {% if saved %}
+            <p class="notice success">Sensor name updated.</p>
+        {% endif %}
+        {% if error %}
+            <p class="notice error">{{ error }}</p>
+        {% endif %}
+
+        {% if sensors %}
+            <div class="sensor-list">
+                {% for sensor in sensors %}
+                    <section class="sensor-card">
+                        <h2>{{ sensor.sensor_name }}</h2>
+                        <div class="sensor-details">
+                            Device: {{ sensor.device_id }}<br>
+                            IP address: {{ sensor.ip_address or "Unknown" }}
+                        </div>
+                        <form class="name-form" method="post"
+                              action="{{ url_for('save_sensor_name', sensor_id=sensor.sensor_id) }}">
+                            <input type="text" name="sensor_name" value="{{ sensor.sensor_name }}"
+                                   maxlength="50" required aria-label="Friendly sensor name">
+                            <button type="submit">Save name</button>
+                        </form>
+                        <p class="last-reading">
+                            Last reading: {{ sensor.last_reading_time or "No readings yet" }}
+                        </p>
+                    </section>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No sensors have been discovered yet.</p>
+        {% endif %}
+    </main>
+</body>
+</html>
