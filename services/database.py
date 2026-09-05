@@ -115,7 +115,9 @@ def get_temperature_history(sensor_id, range_name):
             )
             SELECT
                 MAX(COALESCE(r.pico_ts, r.insert_ts)) AS reading_time,
-                AVG(r.temperature_c) AS temperature_c
+                AVG(r.temperature_c) AS temperature_c,
+                AVG(r.humidity_pct) AS humidity_pct,
+                AVG(r.pressure_hpa) AS pressure_hpa
             FROM sensor_reading AS r
             CROSS JOIN latest
             WHERE r.sensor_id = ?

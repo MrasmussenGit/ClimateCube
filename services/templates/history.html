@@ -10,6 +10,9 @@
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         .back-link { color: #243447; font-weight: bold; text-decoration: none; }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
+        .metric-controls { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 18px; }
+        .metric-control { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
+        .metric-control input { width: 18px; height: 18px; accent-color: #243447; }
         button { padding: 10px 16px; border: 0; border-radius: 8px; background: #d8e0e8; color: #243447; font-size: 15px; cursor: pointer; }
         button.active, #unit-button { background: #243447; color: white; }
         .chart-card { height: 460px; padding: 22px; background: white; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); }
@@ -37,6 +40,21 @@
         <button class="range-button" data-range="7d">7 days</button>
     </div>
 
+    <div class="metric-controls">
+        <label class="metric-control">
+            <input type="checkbox" data-dataset="0" checked>
+            Temperature
+        </label>
+        <label class="metric-control">
+            <input type="checkbox" data-dataset="1">
+            Humidity
+        </label>
+        <label class="metric-control">
+            <input type="checkbox" data-dataset="2">
+            Pressure
+        </label>
+    </div>
+
     <div class="chart-card"><canvas id="temperature-chart"></canvas></div>
     <p id="status" class="status">Loading history...</p>
 
@@ -44,6 +62,9 @@
         const sensorId = {{ sensor.sensor_id }};
         const unitButton = document.getElementById("unit-button");
         const rangeButtons = document.querySelectorAll(".range-button");
+        const metricCheckboxes = document.querySelectorAll(
+            ".metric-control input"
+        );
         const status = document.getElementById("status");
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
         let currentRange = "24h";
@@ -61,7 +82,28 @@
                     borderWidth: 2,
                     pointRadius: 0,
                     tension: 0.15,
-                    fill: true
+                    fill: true,
+                    yAxisID: "temperature"
+                }, {
+                    label: "Humidity",
+                    data: [],
+                    borderColor: "#2471a3",
+                    backgroundColor: "rgba(36, 113, 163, 0.08)",
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.15,
+                    hidden: true,
+                    yAxisID: "humidity"
+                }, {
+                    label: "Pressure",
+                    data: [],
+                    borderColor: "#239b56",
+                    backgroundColor: "rgba(35, 155, 86, 0.08)",
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.15,
+                    hidden: true,
+                    yAxisID: "pressure"
                 }]
             },
             options: {
@@ -70,7 +112,27 @@
                 interaction: { intersect: false, mode: "index" },
                 scales: {
                     x: { ticks: { maxTicksLimit: 10 } },
-                    y: { title: { display: true, text: "Temperature (°C)" } }
+                    temperature: {
+                        type: "linear",
+                        position: "left",
+                        title: { display: true, text: "Temperature (°C)" }
+                    },
+                    humidity: {
+                        type: "linear",
+                        position: "right",
+                        min: 0,
+                        max: 100,
+                        display: false,
+                        title: { display: true, text: "Humidity (%)" },
+                        grid: { drawOnChartArea: false }
+                    },
+                    pressure: {
+                        type: "linear",
+                        position: "right",
+                        display: false,
+                        title: { display: true, text: "Pressure (hPa)" },
+                        grid: { drawOnChartArea: false }
+                    }
                 }
             }
         });
@@ -84,7 +146,14 @@
                 const celsius = Number(reading.temperature_c);
                 return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
             });
-            chart.options.scales.y.title.text = "Temperature (°" + temperatureUnit + ")";
+            chart.data.datasets[1].data = historyReadings.map(function (reading) {
+                return Number(reading.humidity_pct);
+            });
+            chart.data.datasets[2].data = historyReadings.map(function (reading) {
+                return Number(reading.pressure_hpa);
+            });
+            chart.options.scales.temperature.title.text =
+                "Temperature (°" + temperatureUnit + ")";
             unitButton.textContent = useFahrenheit ? "Show °C" : "Show °F";
             chart.update();
         }
@@ -113,6 +182,16 @@
                 button.classList.add("active");
                 currentRange = button.dataset.range;
                 loadHistory();
+            });
+        });
+
+        metricCheckboxes.forEach(function (checkbox) {
+            checkbox.addEventListener("change", function () {
+                const datasetIndex = Number(checkbox.dataset.dataset);
+                const dataset = chart.data.datasets[datasetIndex];
+                dataset.hidden = !checkbox.checked;
+                chart.options.scales[dataset.yAxisID].display = checkbox.checked;
+                chart.update();
             });
         });
 
