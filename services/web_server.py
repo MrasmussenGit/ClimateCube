@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+import socket
 
 from flask import Flask, jsonify, render_template_string
 
@@ -7,6 +8,24 @@ app = Flask(__name__)
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DB_FILE = PROJECT_DIR / "data" / "climatecube.db"
+
+def get_server_info():
+    hostname = socket.gethostname().split(".")[0]
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    try:
+        sock.connect(("10.255.255.255", 1))
+        ip_address = sock.getsockname()[0]
+    except OSError:
+        ip_address = "Unknown"
+    finally:
+        sock.close()
+
+    return {
+        "hostname": hostname,
+        "ip_address": ip_address
+    }
 
 
 def get_latest_readings():
@@ -62,6 +81,13 @@ DASHBOARD = """
             align-items: center;
             justify-content: space-between;
             gap: 20px;
+        }
+
+        .server-info {
+            margin-top: 30px;
+            color: #667788;
+            font-size: 13px;
+            text-align: center;
         }
 
         .unit-button {
@@ -213,6 +239,14 @@ DASHBOARD = """
         <p class="empty">No sensor readings found.</p>
     {% endif %}
 
+    <footer class="server-info">
+        Server:
+        {{ server_info.hostname }}.local:5000
+        &nbsp;|&nbsp;
+        IP address:
+        {{ server_info.ip_address }}
+    </footer>
+
     <script>
         const unitButton =
             document.getElementById("unit-button");
@@ -269,7 +303,8 @@ DASHBOARD = """
 def dashboard():
     return render_template_string(
         DASHBOARD,
-        readings=get_latest_readings()
+        readings=get_latest_readings(),
+        server_info=get_server_info()
     )
 
 
