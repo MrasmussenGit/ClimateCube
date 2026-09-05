@@ -56,6 +56,27 @@ DASHBOARD = """
     <title>ClimateCube</title>
 
     <style>
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .unit-button {
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 8px;
+            background: #243447;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .unit-button:hover {
+            background: #3a5068;
+        }
         body {
             margin: 0;
             padding: 30px;
@@ -125,10 +146,23 @@ DASHBOARD = """
 </head>
 
 <body>
-    <h1>ClimateCube</h1>
-    <p class="subtitle">
-        Latest sensor readings — refreshes every 10 seconds
-    </p>
+    <div class="header">
+        <div>
+            <h1>ClimateCube</h1>
+
+            <p class="subtitle">
+                Latest sensor readings — refreshes every 10 seconds
+            </p>
+        </div>
+
+        <button
+            id="unit-button"
+            class="unit-button"
+            type="button"
+        >
+            Show °F
+        </button>
+    </div>
 
     {% if readings %}
         <div class="sensors">
@@ -136,12 +170,16 @@ DASHBOARD = """
                 <section class="sensor">
                     <h2>{{ reading.sensor_name }}</h2>
 
-                    <div class="temperature">
+                    <div
+                        class="temperature"
+                        data-temperature-c="{{ reading.temperature_c }}"
+                    >
                         {{ "%.2f"|format(reading.temperature_c) }} °C
                     </div>
 
                     <div class="reading">
                         <span class="label">Humidity</span>
+
                         <span>
                             {{ "%.2f"|format(reading.humidity_pct) }} %
                         </span>
@@ -149,6 +187,7 @@ DASHBOARD = """
 
                     <div class="reading">
                         <span class="label">Pressure</span>
+
                         <span>
                             {{ "%.2f"|format(reading.pressure_hpa) }} hPa
                         </span>
@@ -161,9 +200,7 @@ DASHBOARD = """
 
                     <div class="reading">
                         <span class="label">IP address</span>
-                        <span>
-                            {{ reading.ip_address or "Unknown" }}
-                        </span>
+                        <span>{{ reading.ip_address or "Unknown" }}</span>
                     </div>
 
                     <div class="timestamp">
@@ -175,6 +212,54 @@ DASHBOARD = """
     {% else %}
         <p class="empty">No sensor readings found.</p>
     {% endif %}
+
+    <script>
+        const unitButton =
+            document.getElementById("unit-button");
+
+        const temperatures =
+            document.querySelectorAll(".temperature");
+
+        let temperatureUnit =
+            localStorage.getItem("temperatureUnit") || "C";
+
+        function displayTemperatures() {
+            temperatures.forEach(function (element) {
+                const celsius = Number(
+                    element.dataset.temperatureC
+                );
+
+                if (temperatureUnit === "F") {
+                    const fahrenheit = (celsius * 9 / 5) + 32;
+
+                    element.textContent =
+                        fahrenheit.toFixed(2) + " °F";
+                } else {
+                    element.textContent =
+                        celsius.toFixed(2) + " °C";
+                }
+            });
+
+            unitButton.textContent =
+                temperatureUnit === "C"
+                    ? "Show °F"
+                    : "Show °C";
+        }
+
+        unitButton.addEventListener("click", function () {
+            temperatureUnit =
+                temperatureUnit === "C" ? "F" : "C";
+
+            localStorage.setItem(
+                "temperatureUnit",
+                temperatureUnit
+            );
+
+            displayTemperatures();
+        });
+
+        displayTemperatures();
+    </script>
 </body>
 </html>
 """

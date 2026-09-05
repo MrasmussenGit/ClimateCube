@@ -151,6 +151,9 @@ User=$SERVICE_USER
 WorkingDirectory=$PROJECT_DIR
 ExecStart=$PROJECT_DIR/.venv/bin/gunicorn \
     --workers 1 \
+    --worker-class gthread \
+    --threads 4 \
+    --timeout 60 \
     --bind 0.0.0.0:5000 \
     services.web_server:app
 Restart=on-failure
