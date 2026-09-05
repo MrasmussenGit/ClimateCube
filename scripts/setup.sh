@@ -45,7 +45,49 @@ sudo apt install -y \
     sqlite3 \
     mosquitto \
     mosquitto-clients \
-    python3-venv
+    python3-venv \
+    avahi-daemon
+
+    echo
+echo "Configuring ClimateCube hostname..."
+
+CLIMATECUBE_HOSTNAME="climatecube"
+
+# Prevent cloud-init from replacing /etc/hosts on reboot.
+sudo tee /etc/cloud/cloud.cfg.d/99-climatecube-hosts.cfg \
+    > /dev/null <<EOF
+manage_etc_hosts: false
+EOF
+
+sudo hostnamectl set-hostname "$CLIMATECUBE_HOSTNAME"
+
+if grep -q '^127\.0\.1\.1' /etc/hosts; then
+    sudo sed -i \
+        "s/^127\\.0\\.1\\.1.*/127.0.1.1 $CLIMATECUBE_HOSTNAME/" \
+        /etc/hosts
+else
+    echo "127.0.1.1 $CLIMATECUBE_HOSTNAME" |
+        sudo tee -a /etc/hosts > /dev/null
+fi
+
+sudo systemctl enable avahi-daemon
+sudo systemctl restart avahi-daemon
+
+echo "Hostname configured: $CLIMATECUBE_HOSTNAME"
+echo "Dashboard: http://$CLIMATECUBE_HOSTNAME.local:5000/"
+
+echo
+echo "Checking mDNS..."
+
+sudo systemctl is-active --quiet avahi-daemon || {
+    echo "ERROR: Avahi failed to start"
+    sudo systemctl status avahi-daemon --no-pager
+    exit 1
+}
+
+getent hosts climatecube.local || {
+    echo "WARNING: climatecube.local did not resolve locally"
+}
 
 echo
 echo "Configuring Mosquitto..."
