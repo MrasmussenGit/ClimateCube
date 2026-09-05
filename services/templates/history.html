@@ -185,14 +185,19 @@
             });
         });
 
-        metricCheckboxes.forEach(function (checkbox) {
-            checkbox.addEventListener("change", function () {
+        function updateMetricVisibility() {
+            metricCheckboxes.forEach(function (checkbox) {
                 const datasetIndex = Number(checkbox.dataset.dataset);
                 const dataset = chart.data.datasets[datasetIndex];
                 dataset.hidden = !checkbox.checked;
                 chart.options.scales[dataset.yAxisID].display = checkbox.checked;
-                chart.update();
             });
+
+            chart.update();
+        }
+
+        metricCheckboxes.forEach(function (checkbox) {
+            checkbox.addEventListener("change", updateMetricVisibility);
         });
 
         unitButton.addEventListener("click", function () {
@@ -201,6 +206,7 @@
             updateChart();
         });
 
+        updateMetricVisibility();
         loadHistory();
     </script>
 </body>
