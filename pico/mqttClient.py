@@ -8,15 +8,33 @@ DEVICE_ID = device.get_device_id()
 
 TOPIC = "climatecube/readings"
 
-client = MQTTClient(
-    client_id=DEVICE_ID,
-    server=BROKER
-)
+client = None
 
 def connect():
+    global client
+
+    client = MQTTClient(
+        client_id=DEVICE_ID,
+        server=BROKER
+    )
+
     client.connect()
 
+def disconnect():
+    global client
+
+    if client is not None:
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+
+    client = None
+
 def publish_reading(payload):
+
+    if client is None:
+        raise OSError("MQTT client is not connected")
 
     payload["device_id"] = DEVICE_ID
 
