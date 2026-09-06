@@ -116,9 +116,15 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 echo
-echo "Initializing database..."
+echo "Checking database..."
 
-bash scripts/init_db.sh
+if [ ! -f data/climatecube.db ]; then
+    echo "Creating ClimateCube database..."
+    bash scripts/init_db.sh
+else
+    echo "Existing database found; preserving data."
+fi
+
 if [ ! -f data/climatecube.db ]; then
     echo "ERROR: Database was not created"
     exit 1
