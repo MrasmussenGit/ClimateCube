@@ -28,7 +28,9 @@ def get_latest_readings():
                 s.sensor_name,
                 s.device_id,
                 s.ip_address,
+                s.reading_interval_sec,
                 r.pico_ts AS reading_time,
+                r.insert_ts AS last_contact_time,
                 r.temperature_c,
                 r.humidity_pct,
                 r.pressure_hpa

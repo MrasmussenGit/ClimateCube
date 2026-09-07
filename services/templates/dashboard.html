@@ -20,6 +20,14 @@
         .reading { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #e5e9ed; }
         .label { color: #667788; }
         .timestamp { margin-top: 18px; color: #778899; font-size: 13px; }
+        .communication-status { margin-top: 9px; color: #287a4d; font-size: 13px; font-weight: bold; }
+        .communication-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: #2e9d62; }
+        .communication-status.due { color: #8a6500; }
+        .communication-status.due::before { background: #d6a400; }
+        .communication-status.overdue { color: #b42318; }
+        .communication-status.overdue::before { background: #d92d20; }
+        .communication-status.unknown { color: #667788; }
+        .communication-status.unknown::before { background: #98a2b3; }
         .history-link { display: inline-block; margin-top: 18px; color: #243447; font-weight: bold; text-decoration: none; }
         .history-link:hover { text-decoration: underline; }
         .server-info { margin-top: 30px; color: #667788; font-size: 13px; text-align: center; }
@@ -34,7 +42,7 @@
     <div class="header">
         <div>
             <h1>ClimateCube</h1>
-            <p class="subtitle">Latest sensor readings — refreshes every 10 seconds</p>
+            <p class="subtitle">Latest sensor readings — refreshes every 60 seconds</p>
         </div>
         <div class="header-actions">
             <a class="button" href="{{ url_for('settings') }}">Settings</a>
@@ -67,6 +75,13 @@
                         <span>{{ reading.ip_address or "Unknown" }}</span>
                     </div>
                     <div class="timestamp">Reading time: {{ reading.reading_time }}</div>
+                    <div
+                        class="communication-status"
+                        data-last-contact="{{ reading.last_contact_time }}"
+                        data-interval-seconds="{{ reading.reading_interval_sec or '' }}"
+                    >
+                        Checking sensor status…
+                    </div>
                     <a class="history-link" href="{{ url_for('history', sensor_id=reading.sensor_id) }}">
                         View temperature history →
                     </a>
@@ -97,6 +112,66 @@
             unitButton.textContent = temperatureUnit === "C" ? "Show °F" : "Show °C";
         }
 
+        function formatDuration(totalSeconds) {
+            const seconds = Math.max(0, Math.ceil(totalSeconds));
+
+            if (seconds < 60) {
+                return seconds + " second" + (seconds === 1 ? "" : "s");
+            }
+
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            let text = minutes + " minute" + (minutes === 1 ? "" : "s");
+
+            if (remainingSeconds > 0) {
+                text += " " + remainingSeconds + " second" + (remainingSeconds === 1 ? "" : "s");
+            }
+
+            return text;
+        }
+
+        function formatInterval(intervalSeconds) {
+            if (intervalSeconds % 60 === 0) {
+                const minutes = intervalSeconds / 60;
+                return minutes + " minute" + (minutes === 1 ? "" : "s");
+            }
+
+            return intervalSeconds + " second" + (intervalSeconds === 1 ? "" : "s");
+        }
+
+        function updateCommunicationStatuses() {
+            document.querySelectorAll(".communication-status").forEach(function (element) {
+                const intervalSeconds = Number(element.dataset.intervalSeconds);
+                const lastContact = new Date(element.dataset.lastContact.replace(" ", "T") + "Z");
+
+                element.classList.remove("due", "overdue", "unknown");
+
+                if (!intervalSeconds || Number.isNaN(lastContact.getTime())) {
+                    element.classList.add("unknown");
+                    element.textContent = "Reporting interval unavailable";
+                    return;
+                }
+
+                const now = Date.now();
+                const nextExpected = lastContact.getTime() + (intervalSeconds * 1000);
+                const graceSeconds = Math.max(30, intervalSeconds * 0.5);
+                const overdueAt = nextExpected + (graceSeconds * 1000);
+                const frequency = "Every " + formatInterval(intervalSeconds) + " · ";
+
+                if (now < nextExpected) {
+                    element.textContent = frequency + "next reading in " +
+                        formatDuration((nextExpected - now) / 1000);
+                } else if (now < overdueAt) {
+                    element.classList.add("due");
+                    element.textContent = frequency + "reading expected now";
+                } else {
+                    element.classList.add("overdue");
+                    element.textContent = frequency + "overdue by " +
+                        formatDuration((now - nextExpected) / 1000);
+                }
+            });
+        }
+
         unitButton.addEventListener("click", function () {
             temperatureUnit = temperatureUnit === "C" ? "F" : "C";
             localStorage.setItem("temperatureUnit", temperatureUnit);
@@ -104,6 +179,8 @@
         });
 
         displayTemperatures();
+        updateCommunicationStatuses();
+        setInterval(updateCommunicationStatuses, 1000);
     </script>
 </body>
 </html>

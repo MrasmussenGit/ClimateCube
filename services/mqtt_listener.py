@@ -6,6 +6,20 @@ from paho.mqtt import client as mqtt
 DB_FILE = "data/climatecube.db"
 
 
+def ensure_schema():
+    with sqlite3.connect(DB_FILE) as conn:
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(sensor)")
+        }
+
+        if "reading_interval_sec" not in columns:
+            conn.execute(
+                "ALTER TABLE sensor "
+                "ADD COLUMN reading_interval_sec INTEGER"
+            )
+
+
 def on_message(client, userdata, msg):
 
     print("MESSAGE RECEIVED")
@@ -13,6 +27,14 @@ def on_message(client, userdata, msg):
     payload = json.loads(msg.payload.decode())
 
     print(f"Received: {payload}")
+
+    reading_interval_sec = payload.get("reading_interval_sec")
+
+    if reading_interval_sec is not None:
+        reading_interval_sec = int(reading_interval_sec)
+
+        if reading_interval_sec <= 0:
+            reading_interval_sec = None
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -47,16 +69,18 @@ def on_message(client, userdata, msg):
                 sensor_type,
                 install_date,
                 ip_address,
-                active_flag
+                active_flag,
+                reading_interval_sec
             )
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
             """,
             (
                 payload["device_id"],
                 display_name,
                 "BME280",
                 payload["ip_address"],
-                1
+                1,
+                reading_interval_sec
             )
         )
 
@@ -75,11 +99,13 @@ def on_message(client, userdata, msg):
         cursor.execute(
             """
             UPDATE sensor
-            SET ip_address = ?
+            SET ip_address = ?,
+                reading_interval_sec = COALESCE(?, reading_interval_sec)
             WHERE sensor_id = ?
             """,
             (
                 payload["ip_address"],
+                reading_interval_sec,
                 sensor_id
             )
         )
@@ -110,6 +136,8 @@ def on_message(client, userdata, msg):
 
     print("Reading stored")
 
+
+ensure_schema()
 
 client = mqtt.Client()
 

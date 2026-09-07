@@ -37,6 +37,7 @@ def publish_reading(payload):
         raise OSError("MQTT client is not connected")
 
     payload["device_id"] = DEVICE_ID
+    payload["reading_interval_sec"] = READING_INTERVAL_SEC
 
     client.publish(
         TOPIC,
