@@ -74,7 +74,12 @@
                         <span class="label">IP address</span>
                         <span>{{ reading.ip_address or "Unknown" }}</span>
                     </div>
-                    <div class="timestamp">Reading time: {{ reading.reading_time }}</div>
+                    <div class="timestamp">
+                        Reading time:
+                        <span class="local-time" data-utc-time="{{ reading.reading_time }}">
+                            {{ reading.reading_time }} UTC
+                        </span>
+                    </div>
                     <div
                         class="communication-status"
                         data-last-contact="{{ reading.last_contact_time }}"
@@ -102,6 +107,34 @@
         const unitButton = document.getElementById("unit-button");
         const temperatures = document.querySelectorAll(".temperature");
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
+
+        function parseUtcTimestamp(timestamp) {
+            if (!timestamp) return null;
+            const normalized = timestamp.replace(" ", "T");
+            return new Date(/[zZ]$|[+-]\d\d:\d\d$/.test(normalized)
+                ? normalized
+                : normalized + "Z");
+        }
+
+        function displayLocalTimes() {
+            const formatter = new Intl.DateTimeFormat(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+                timeZoneName: "short"
+            });
+
+            document.querySelectorAll(".local-time").forEach(function (element) {
+                const date = parseUtcTimestamp(element.dataset.utcTime);
+
+                if (date && !Number.isNaN(date.getTime())) {
+                    element.textContent = formatter.format(date);
+                }
+            });
+        }
 
         function displayTemperatures() {
             temperatures.forEach(function (element) {
@@ -142,11 +175,11 @@
         function updateCommunicationStatuses() {
             document.querySelectorAll(".communication-status").forEach(function (element) {
                 const intervalSeconds = Number(element.dataset.intervalSeconds);
-                const lastContact = new Date(element.dataset.lastContact.replace(" ", "T") + "Z");
+                const lastContact = parseUtcTimestamp(element.dataset.lastContact);
 
                 element.classList.remove("due", "overdue", "unknown");
 
-                if (!intervalSeconds || Number.isNaN(lastContact.getTime())) {
+                if (!intervalSeconds || !lastContact || Number.isNaN(lastContact.getTime())) {
                     element.classList.add("unknown");
                     element.textContent = "Reporting interval unavailable";
                     return;
@@ -179,6 +212,7 @@
         });
 
         displayTemperatures();
+    displayLocalTimes();
         updateCommunicationStatuses();
         setInterval(updateCommunicationStatuses, 1000);
     </script>

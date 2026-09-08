@@ -29,6 +29,7 @@
         <div>
             <h1>{{ sensor.sensor_name }}</h1>
             <p class="details">Temperature history · {{ sensor.device_id }}</p>
+            <p id="timezone-details" class="details"></p>
         </div>
         <button id="unit-button" type="button">Show °F</button>
     </div>
@@ -66,9 +67,38 @@
             ".metric-control input"
         );
         const status = document.getElementById("status");
+        const timezoneDetails = document.getElementById("timezone-details");
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
         let currentRange = "24h";
         let historyReadings = [];
+
+        const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        timezoneDetails.textContent = "Times shown in " + (timezoneName || "your local timezone");
+
+        function parseUtcTimestamp(timestamp) {
+            if (!timestamp) return null;
+            const normalized = timestamp.replace(" ", "T");
+            return new Date(/[zZ]$|[+-]\d\d:\d\d$/.test(normalized)
+                ? normalized
+                : normalized + "Z");
+        }
+
+        function formatLocalTimestamp(timestamp) {
+            const date = parseUtcTimestamp(timestamp);
+
+            if (!date || Number.isNaN(date.getTime())) {
+                return timestamp;
+            }
+
+            return new Intl.DateTimeFormat(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit"
+            }).format(date);
+        }
 
         const chart = new Chart(document.getElementById("temperature-chart"), {
             type: "line",
@@ -140,7 +170,7 @@
         function updateChart() {
             const useFahrenheit = temperatureUnit === "F";
             chart.data.labels = historyReadings.map(function (reading) {
-                return reading.reading_time.replace("T", " ");
+                return formatLocalTimestamp(reading.reading_time);
             });
             chart.data.datasets[0].data = historyReadings.map(function (reading) {
                 const celsius = Number(reading.temperature_c);
