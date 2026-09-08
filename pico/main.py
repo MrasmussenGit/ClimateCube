@@ -5,16 +5,45 @@ import time
 import mqttClient
 import display
 import device
+import os
 from machine import RTC
 from config import READING_INTERVAL_SEC
 
 RECONNECT_DELAY_SEC = 10
+LOG_FILE = "boot.log"
+OLD_LOG_FILE = "boot.log.old"
+MAX_LOG_SIZE_BYTES = 16 * 1024
+
+
+def rotate_log_if_needed():
+    try:
+        if os.stat(LOG_FILE)[6] < MAX_LOG_SIZE_BYTES:
+            return
+    except OSError:
+        return
+
+    try:
+        os.remove(OLD_LOG_FILE)
+    except OSError:
+        pass
+
+    try:
+        os.rename(LOG_FILE, OLD_LOG_FILE)
+    except OSError:
+        # If rotation fails, remove the active log so logging cannot fill
+        # the filesystem indefinitely.
+        try:
+            os.remove(LOG_FILE)
+        except OSError:
+            pass
 
 def log(msg):
     print(msg)
 
     try:
-        with open("boot.log", "a") as f:
+        rotate_log_if_needed()
+
+        with open(LOG_FILE, "a") as f:
             f.write(msg + "\n")
     except Exception:
         pass
