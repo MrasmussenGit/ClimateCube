@@ -28,6 +28,7 @@ def on_message(client, userdata, msg):
 
     print(f"Received: {payload}")
 
+    ip_address = payload.get("ip_address")
     reading_interval_sec = payload.get("reading_interval_sec")
 
     if reading_interval_sec is not None:
@@ -78,7 +79,7 @@ def on_message(client, userdata, msg):
                 payload["device_id"],
                 display_name,
                 "BME280",
-                payload["ip_address"],
+                ip_address,
                 1,
                 reading_interval_sec
             )
@@ -99,12 +100,12 @@ def on_message(client, userdata, msg):
         cursor.execute(
             """
             UPDATE sensor
-            SET ip_address = ?,
+            SET ip_address = COALESCE(?, ip_address),
                 reading_interval_sec = COALESCE(?, reading_interval_sec)
             WHERE sensor_id = ?
             """,
             (
-                payload["ip_address"],
+                ip_address,
                 reading_interval_sec,
                 sensor_id
             )
@@ -137,11 +138,23 @@ def on_message(client, userdata, msg):
     print("Reading stored")
 
 
+def safe_on_message(client, userdata, msg):
+    try:
+        on_message(client, userdata, msg)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        print(f"Invalid MQTT message ignored: {error}")
+    except sqlite3.Error as error:
+        print(f"Database error while processing MQTT message: {error}")
+    except Exception as error:
+        # An unexpected message must not terminate the MQTT network loop.
+        print(f"Unexpected MQTT message error: {error}")
+
+
 ensure_schema()
 
 client = mqtt.Client()
 
-client.on_message = on_message
+client.on_message = safe_on_message
 
 client.connect("localhost", 1883)
 
