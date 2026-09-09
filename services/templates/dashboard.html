@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="refresh" content="60">
     <title>ClimateCube</title>
     <style>
         body { margin: 0; padding: 30px; background: #eef2f6; color: #243447; font-family: Arial, sans-serif; }
@@ -42,7 +41,7 @@
     <div class="header">
         <div>
             <h1>ClimateCube</h1>
-            <p class="subtitle">Latest sensor readings — refreshes every 60 seconds</p>
+            <p id="update-status" class="subtitle">Latest sensor readings — updates automatically</p>
         </div>
         <div class="header-actions">
             <a class="button" href="{{ url_for('settings') }}">Settings</a>
@@ -53,26 +52,26 @@
     {% if readings %}
         <div class="sensors">
             {% for reading in readings %}
-                <section class="sensor">
-                    <h2>{{ reading.sensor_name }}</h2>
+                <section class="sensor" data-sensor-id="{{ reading.sensor_id }}">
+                    <h2 class="sensor-name">{{ reading.sensor_name }}</h2>
                     <div class="temperature" data-temperature-c="{{ reading.temperature_c }}">
                         {{ "%.2f"|format(reading.temperature_c) }} °C
                     </div>
                     <div class="reading">
                         <span class="label">Humidity</span>
-                        <span>{{ "%.2f"|format(reading.humidity_pct) }} %</span>
+                        <span class="humidity">{{ "%.2f"|format(reading.humidity_pct) }} %</span>
                     </div>
                     <div class="reading">
                         <span class="label">Pressure</span>
-                        <span>{{ "%.2f"|format(reading.pressure_hpa) }} hPa</span>
+                        <span class="pressure">{{ "%.2f"|format(reading.pressure_hpa) }} hPa</span>
                     </div>
                     <div class="reading">
                         <span class="label">Device</span>
-                        <span>{{ reading.device_id }}</span>
+                        <span class="device-id">{{ reading.device_id }}</span>
                     </div>
                     <div class="reading">
                         <span class="label">IP address</span>
-                        <span>{{ reading.ip_address or "Unknown" }}</span>
+                        <span class="ip-address">{{ reading.ip_address or "Unknown" }}</span>
                     </div>
                     <div class="timestamp">
                         Reading time:
@@ -94,7 +93,7 @@
             {% endfor %}
         </div>
     {% else %}
-        <p class="empty">No sensor readings found.</p>
+        <p class="empty">No sensor readings found. Waiting for sensors…</p>
     {% endif %}
 
     <footer class="server-info">
@@ -105,7 +104,10 @@
 
     <script>
         const unitButton = document.getElementById("unit-button");
+        const updateStatus = document.getElementById("update-status");
         const temperatures = document.querySelectorAll(".temperature");
+        const latestApiUrl = "/api/latest";
+        const pollIntervalMilliseconds = 10000;
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
 
         function parseUtcTimestamp(timestamp) {
@@ -205,6 +207,67 @@
             });
         }
 
+        function updateSensorCard(reading) {
+            const card = document.querySelector(
+                '.sensor[data-sensor-id="' + reading.sensor_id + '"]'
+            );
+
+            if (!card) return;
+
+            card.querySelector(".sensor-name").textContent = reading.sensor_name;
+            card.querySelector(".humidity").textContent =
+                Number(reading.humidity_pct).toFixed(2) + " %";
+            card.querySelector(".pressure").textContent =
+                Number(reading.pressure_hpa).toFixed(2) + " hPa";
+            card.querySelector(".device-id").textContent = reading.device_id;
+            card.querySelector(".ip-address").textContent = reading.ip_address || "Unknown";
+
+            const temperature = card.querySelector(".temperature");
+            temperature.dataset.temperatureC = reading.temperature_c;
+
+            const localTime = card.querySelector(".local-time");
+            localTime.dataset.utcTime = reading.reading_time;
+
+            const communicationStatus = card.querySelector(".communication-status");
+            communicationStatus.dataset.lastContact = reading.last_contact_time;
+            communicationStatus.dataset.intervalSeconds = reading.reading_interval_sec || "";
+        }
+
+        async function refreshReadings() {
+            try {
+                const response = await fetch(latestApiUrl, { cache: "no-store" });
+
+                if (!response.ok) throw new Error("Latest readings request failed");
+
+                const readings = await response.json();
+                const displayedIds = Array.from(document.querySelectorAll(".sensor"))
+                    .map(function (card) { return Number(card.dataset.sensorId); })
+                    .sort(function (a, b) { return a - b; });
+                const receivedIds = readings
+                    .map(function (reading) { return Number(reading.sensor_id); })
+                    .sort(function (a, b) { return a - b; });
+
+                if (displayedIds.join(",") !== receivedIds.join(",")) {
+                    window.location.reload();
+                    return;
+                }
+
+                readings.forEach(updateSensorCard);
+                displayTemperatures();
+                displayLocalTimes();
+                updateCommunicationStatuses();
+                updateStatus.textContent = "Latest sensor readings — updated " +
+                    new Intl.DateTimeFormat(undefined, {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        second: "2-digit"
+                    }).format(new Date());
+            } catch (error) {
+                updateStatus.textContent =
+                    "Latest sensor readings — unable to contact server; retrying…";
+            }
+        }
+
         unitButton.addEventListener("click", function () {
             temperatureUnit = temperatureUnit === "C" ? "F" : "C";
             localStorage.setItem("temperatureUnit", temperatureUnit);
@@ -212,9 +275,11 @@
         });
 
         displayTemperatures();
-    displayLocalTimes();
+        displayLocalTimes();
         updateCommunicationStatuses();
+        refreshReadings();
         setInterval(updateCommunicationStatuses, 1000);
+        setInterval(refreshReadings, pollIntervalMilliseconds);
     </script>
 </body>
 </html>
