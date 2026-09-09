@@ -5,18 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ sensor.sensor_name }} History</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
     <style>
-        body { margin: 0; padding: 30px; background: #eef2f6; color: #243447; font-family: Arial, sans-serif; }
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); }
+        body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-        .back-link { color: #243447; font-weight: bold; text-decoration: none; }
+        .header-actions { display: flex; gap: 8px; }
+        .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
         .metric-controls { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 18px; }
         .metric-control { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
-        .metric-control input { width: 18px; height: 18px; accent-color: #243447; }
-        button { padding: 10px 16px; border: 0; border-radius: 8px; background: #d8e0e8; color: #243447; font-size: 15px; cursor: pointer; }
-        button.active, #unit-button { background: #243447; color: white; }
-        .chart-card { height: 460px; padding: 22px; background: white; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); }
-        .details, .status { color: #667788; }
+        .metric-control input { width: 18px; height: 18px; accent-color: var(--button); }
+        button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; cursor: pointer; }
+        button.active, #unit-button, #theme-button { background: var(--button); color: var(--page); }
+        .chart-card { height: 460px; padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .details, .status { color: var(--muted); }
         @media (max-width: 600px) {
             body { padding: 18px; }
             .chart-card { height: 360px; padding: 12px; }
@@ -31,7 +38,10 @@
             <p class="details">Temperature history · {{ sensor.device_id }}</p>
             <p id="timezone-details" class="details"></p>
         </div>
-        <button id="unit-button" type="button">Show °F</button>
+        <div class="header-actions">
+            <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
+            <button id="unit-button" type="button">Show °F</button>
+        </div>
     </div>
 
     <div class="controls">
@@ -61,6 +71,7 @@
 
     <script>
         const sensorId = {{ sensor.sensor_id }};
+        const themeButton = document.getElementById("theme-button");
         const unitButton = document.getElementById("unit-button");
         const rangeButtons = document.querySelectorAll(".range-button");
         const metricCheckboxes = document.querySelectorAll(
@@ -74,6 +85,20 @@
 
         const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timezoneDetails.textContent = "Times shown in " + (timezoneName || "your local timezone");
+
+        function applyChartTheme() {
+            const styles = getComputedStyle(document.documentElement);
+            Chart.defaults.color = styles.getPropertyValue("--muted").trim();
+            Chart.defaults.borderColor = styles.getPropertyValue("--grid").trim();
+        }
+
+        function updateThemeButton() {
+            const dark = document.documentElement.dataset.theme === "dark";
+            themeButton.textContent = dark ? "Light mode" : "Dark mode";
+            themeButton.setAttribute("aria-pressed", String(dark));
+        }
+
+        applyChartTheme();
 
         function parseUtcTimestamp(timestamp) {
             if (!timestamp) return null;
@@ -236,6 +261,16 @@
             updateChart();
         });
 
+        themeButton.addEventListener("click", function () {
+            const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+            document.documentElement.dataset.theme = nextTheme;
+            localStorage.setItem("theme", nextTheme);
+            applyChartTheme();
+            updateThemeButton();
+            chart.update();
+        });
+
+        updateThemeButton();
         updateMetricVisibility();
         loadHistory();
     </script>
