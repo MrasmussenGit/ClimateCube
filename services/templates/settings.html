@@ -21,8 +21,13 @@
         .error { background: #f9dddd; color: #8a2727; }
         .sensor-list { display: grid; gap: 16px; margin-top: 24px; }
         .sensor-card { padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .sensor-card.inactive { opacity: 0.72; border: 2px dashed var(--border); }
         .sensor-card h2 { margin-top: 0; margin-bottom: 8px; }
+        .sensor-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .visibility-status { margin: 0; color: var(--muted); font-size: 13px; font-weight: bold; }
         .name-form { display: flex; gap: 10px; margin-top: 18px; }
+        .visibility-form { margin-top: 12px; }
+        .visibility-form button { background: var(--border); color: var(--text); }
         .name-form input { min-width: 0; flex: 1; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 16px; }
         button { padding: 11px 18px; border: 0; border-radius: 8px; background: var(--button); color: var(--page); font-size: 16px; cursor: pointer; }
         .last-reading { margin-bottom: 0; font-size: 13px; }
@@ -44,6 +49,9 @@
         {% if saved %}
             <p class="notice success">Sensor name updated.</p>
         {% endif %}
+        {% if visibility_saved %}
+            <p class="notice success">Dashboard visibility updated.</p>
+        {% endif %}
         {% if error %}
             <p class="notice error">{{ error }}</p>
         {% endif %}
@@ -51,8 +59,13 @@
         {% if sensors %}
             <div class="sensor-list">
                 {% for sensor in sensors %}
-                    <section class="sensor-card">
-                        <h2>{{ sensor.sensor_name }}</h2>
+                    <section class="sensor-card{% if not sensor.active_flag %} inactive{% endif %}">
+                        <div class="sensor-card-header">
+                            <h2>{{ sensor.sensor_name }}</h2>
+                            <p class="visibility-status">
+                                {% if sensor.active_flag %}Shown on dashboard{% else %}Hidden from dashboard{% endif %}
+                            </p>
+                        </div>
                         <div class="sensor-details">
                             Device: {{ sensor.device_id }}<br>
                             IP address: {{ sensor.ip_address or "Unknown" }}
@@ -62,6 +75,13 @@
                             <input type="text" name="sensor_name" value="{{ sensor.sensor_name }}"
                                    maxlength="50" required aria-label="Friendly sensor name">
                             <button type="submit">Save name</button>
+                        </form>
+                        <form class="visibility-form" method="post"
+                              action="{{ url_for('save_sensor_visibility', sensor_id=sensor.sensor_id) }}">
+                            <input type="hidden" name="is_visible" value="{% if sensor.active_flag %}0{% else %}1{% endif %}">
+                            <button type="submit">
+                                {% if sensor.active_flag %}Hide from dashboard{% else %}Show on dashboard{% endif %}
+                            </button>
                         </form>
                         <p class="last-reading">
                             Last reading: {{ sensor.last_reading_time or "No readings yet" }}

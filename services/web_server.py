@@ -14,19 +14,23 @@ try:
     from .database import (
         HISTORY_RANGES,
         get_latest_readings,
+        get_hidden_sensor_count,
         get_sensor,
         get_sensors,
         get_temperature_history,
-        update_sensor_name
+        update_sensor_name,
+        update_sensor_visibility
     )
 except ImportError:
     from database import (
         HISTORY_RANGES,
         get_latest_readings,
+        get_hidden_sensor_count,
         get_sensor,
         get_sensors,
         get_temperature_history,
-        update_sensor_name
+        update_sensor_name,
+        update_sensor_visibility
     )
 
 
@@ -53,16 +57,21 @@ def get_server_info():
 
 @app.route("/")
 def dashboard():
+    show_hidden = request.args.get("show_hidden") == "1"
+
     return render_template(
         "dashboard.html",
-        readings=get_latest_readings(),
+        readings=get_latest_readings(include_inactive=show_hidden),
+        hidden_sensor_count=get_hidden_sensor_count(),
+        show_hidden=show_hidden,
         server_info=get_server_info()
     )
 
 
 @app.route("/api/latest")
 def latest_api():
-    return jsonify(get_latest_readings())
+    show_hidden = request.args.get("show_hidden") == "1"
+    return jsonify(get_latest_readings(include_inactive=show_hidden))
 
 
 @app.route("/settings")
@@ -71,6 +80,7 @@ def settings():
         "settings.html",
         sensors=get_sensors(),
         saved=request.args.get("saved") == "1",
+        visibility_saved=request.args.get("visibility_saved") == "1",
         error=request.args.get("error")
     )
 
@@ -95,6 +105,16 @@ def save_sensor_name(sensor_id):
         abort(404)
 
     return redirect(url_for("settings", saved="1"))
+
+
+@app.route("/settings/sensor/<int:sensor_id>/visibility", methods=["POST"])
+def save_sensor_visibility(sensor_id):
+    is_visible = request.form.get("is_visible") == "1"
+
+    if not update_sensor_visibility(sensor_id, is_visible):
+        abort(404)
+
+    return redirect(url_for("settings", visibility_saved="1"))
 
 
 @app.route("/history/<int:sensor_id>")

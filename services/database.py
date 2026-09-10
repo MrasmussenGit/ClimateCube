@@ -19,7 +19,7 @@ def get_connection():
     return conn
 
 
-def get_latest_readings():
+def get_latest_readings(include_inactive=False):
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -28,6 +28,7 @@ def get_latest_readings():
                 s.sensor_name,
                 s.device_id,
                 s.ip_address,
+                s.active_flag,
                 s.reading_interval_sec,
                 r.pico_ts AS reading_time,
                 r.insert_ts AS last_contact_time,
@@ -43,8 +44,10 @@ def get_latest_readings():
                 FROM sensor_reading
                 GROUP BY sensor_id
             )
+              AND (? = 1 OR s.active_flag = 1)
             ORDER BY s.sensor_name
-            """
+            """,
+            (1 if include_inactive else 0,)
         ).fetchall()
 
     return [dict(row) for row in rows]
@@ -73,6 +76,7 @@ def get_sensors():
                 s.sensor_name,
                 s.device_id,
                 s.ip_address,
+                s.active_flag,
                 MAX(COALESCE(r.pico_ts, r.insert_ts)) AS last_reading_time
             FROM sensor AS s
             LEFT JOIN sensor_reading AS r
@@ -81,12 +85,22 @@ def get_sensors():
                 s.sensor_id,
                 s.sensor_name,
                 s.device_id,
-                s.ip_address
+                s.ip_address,
+                s.active_flag
             ORDER BY s.sensor_name
             """
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def get_hidden_sensor_count():
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM sensor WHERE active_flag = 0"
+        ).fetchone()
+
+    return row["count"]
 
 
 def update_sensor_name(sensor_id, sensor_name):
@@ -98,6 +112,20 @@ def update_sensor_name(sensor_id, sensor_name):
             WHERE sensor_id = ?
             """,
             (sensor_name, sensor_id)
+        )
+
+    return cursor.rowcount == 1
+
+
+def update_sensor_visibility(sensor_id, is_visible):
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE sensor
+            SET active_flag = ?
+            WHERE sensor_id = ?
+            """,
+            (1 if is_visible else 0, sensor_id)
         )
 
     return cursor.rowcount == 1

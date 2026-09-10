@@ -20,7 +20,11 @@
         .button:hover { background: var(--button-hover); }
         .sensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 30px; }
         .sensor { padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .sensor.hidden-sensor { opacity: 0.72; border: 2px dashed var(--border); }
+        .sensor-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .sensor h2 { margin-top: 0; }
+        .sensor-heading h2 { margin-bottom: 0; }
+        .hidden-badge { padding: 4px 8px; border-radius: 999px; background: var(--border); color: var(--muted); font-size: 12px; font-weight: bold; }
         .temperature { margin: 20px 0; color: #d35400; font-size: 42px; font-weight: bold; }
         .reading { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
         .label { color: var(--muted); }
@@ -51,6 +55,15 @@
         </div>
         <div class="header-actions">
             <button id="theme-button" class="button" type="button" aria-pressed="false">Dark mode</button>
+            {% if hidden_sensor_count %}
+                {% if show_hidden %}
+                    <a class="button" href="{{ url_for('dashboard') }}">Hide inactive</a>
+                {% else %}
+                    <a class="button" href="{{ url_for('dashboard', show_hidden=1) }}">
+                        Show inactive ({{ hidden_sensor_count }})
+                    </a>
+                {% endif %}
+            {% endif %}
             <a class="button" href="{{ url_for('settings') }}">Settings</a>
             <button id="unit-button" class="button" type="button">Show °F</button>
         </div>
@@ -59,8 +72,11 @@
     {% if readings %}
         <div class="sensors">
             {% for reading in readings %}
-                <section class="sensor" data-sensor-id="{{ reading.sensor_id }}">
-                    <h2 class="sensor-name">{{ reading.sensor_name }}</h2>
+                <section class="sensor{% if not reading.active_flag %} hidden-sensor{% endif %}" data-sensor-id="{{ reading.sensor_id }}">
+                    <div class="sensor-heading">
+                        <h2 class="sensor-name">{{ reading.sensor_name }}</h2>
+                        {% if not reading.active_flag %}<span class="hidden-badge">Inactive</span>{% endif %}
+                    </div>
                     <div class="temperature" data-temperature-c="{{ reading.temperature_c }}">
                         {{ "%.2f"|format(reading.temperature_c) }} °C
                     </div>
@@ -114,7 +130,7 @@
         const unitButton = document.getElementById("unit-button");
         const updateStatus = document.getElementById("update-status");
         const temperatures = document.querySelectorAll(".temperature");
-        const latestApiUrl = "/api/latest";
+        const latestApiUrl = "/api/latest{% if show_hidden %}?show_hidden=1{% endif %}";
         const pollIntervalMilliseconds = 10000;
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
 
