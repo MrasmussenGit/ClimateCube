@@ -100,6 +100,15 @@ def ensure_mqtt(wlan):
             time.sleep(RECONNECT_DELAY_SEC)
 
 
+def wait_for_next_reading(data):
+    remaining = READING_INTERVAL_SEC
+
+    while remaining > 0:
+        display.update(data, rtc.datetime(), remaining)
+        time.sleep(1)
+        remaining -= 1
+
+
 # Connect to WiFi
 log("Starting WiFi")
 wlan, ip_address = ensure_wifi()
@@ -200,10 +209,11 @@ while True:
 
         try:
             mqttClient.publish_reading(payload)
+            display.show_publish_success()
             break
         except Exception as e:
             log("MQTT publish failed: {}".format(e))
             mqttClient.disconnect()
             wlan, ip_address = ensure_mqtt(wlan)
 
-    time.sleep(READING_INTERVAL_SEC)
+    wait_for_next_reading(data)
