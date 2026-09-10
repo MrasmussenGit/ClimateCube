@@ -41,7 +41,8 @@ def publish_reading(payload):
 
     client.publish(
         TOPIC,
-        json.dumps(payload)
+        json.dumps(payload),
+        qos=1
     )
 
     print("Reading published")

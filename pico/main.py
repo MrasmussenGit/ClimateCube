@@ -10,6 +10,7 @@ from machine import RTC
 from config import READING_INTERVAL_SEC
 
 RECONNECT_DELAY_SEC = 10
+SENSOR_RETRY_DELAYS_SEC = (10, 30, 60)
 LOG_FILE = "boot.log"
 OLD_LOG_FILE = "boot.log.old"
 MAX_LOG_SIZE_BYTES = 16 * 1024
@@ -114,8 +115,10 @@ else:
     log("Time sync failed")
 
 log("Setting up display")
-display.init()
-log("Display initialized")
+if display.init():
+    log("Display initialized")
+else:
+    log("Display not detected; continuing without it")
 
 # Initialize RTC
 log("Initializing RTC")
@@ -134,8 +137,34 @@ log(
 log("Monitor Started")
 log("----------------------------")
 
+sensor_missing = False
+sensor_retry_index = 0
+
 while True:
     data = sensor.GetTempData()
+
+    if data is None:
+        retry_delay = SENSOR_RETRY_DELAYS_SEC[sensor_retry_index]
+
+        if not sensor_missing:
+            log("BME280 sensor not detected")
+            sensor_missing = True
+
+        # Refresh the warning on every retry. This also initializes an OLED
+        # that is connected after startup.
+        display.show_sensor_not_detected()
+        time.sleep(retry_delay)
+        sensor_retry_index = min(
+            sensor_retry_index + 1,
+            len(SENSOR_RETRY_DELAYS_SEC) - 1
+        )
+        continue
+
+    if sensor_missing:
+        log("BME280 sensor detected; resuming readings")
+        sensor_missing = False
+        sensor_retry_index = 0
+
     dt = rtc.datetime()
     display.update(data, dt)
 
