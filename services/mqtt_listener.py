@@ -4,6 +4,21 @@ import sqlite3
 from paho.mqtt import client as mqtt
 
 DB_FILE = "data/climatecube.db"
+MQTT_TOPIC = "climatecube/readings"
+
+
+def on_connect(client, userdata, flags, reason_code):
+    if reason_code != 0:
+        print(f"MQTT connection failed with code {reason_code}", flush=True)
+        return
+
+    client.subscribe(MQTT_TOPIC, qos=1)
+    print(f"Listening for ClimateCube messages on {MQTT_TOPIC}...", flush=True)
+
+
+def on_disconnect(client, userdata, reason_code):
+    if reason_code != 0:
+        print("MQTT connection lost; reconnecting...", flush=True)
 
 
 def ensure_schema():
@@ -154,12 +169,10 @@ ensure_schema()
 
 client = mqtt.Client()
 
+client.on_connect = on_connect
+client.on_disconnect = on_disconnect
 client.on_message = safe_on_message
 
 client.connect("localhost", 1883)
-
-client.subscribe("climatecube/readings")
-
-print("Listening for ClimateCube messages...")
 
 client.loop_forever()
