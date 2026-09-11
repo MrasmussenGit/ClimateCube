@@ -1,12 +1,18 @@
 from umqtt.simple import MQTTClient
+import binascii
 import json
 import device
+import os
 import socket
 
 from config import READING_INTERVAL_SEC
 from defaults import BROKER
 
 DEVICE_ID = device.get_device_id()
+MQTT_CLIENT_ID = "{}-{}".format(
+    DEVICE_ID,
+    binascii.hexlify(os.urandom(4)).decode()
+)
 
 TOPIC = "climatecube/readings"
 
@@ -21,7 +27,9 @@ def connect():
     broker_address = socket.getaddrinfo(BROKER, 1883)[0][-1][0]
 
     client = MQTTClient(
-        client_id=DEVICE_ID,
+        # A new ID per boot prevents a stale broker connection with the same
+        # hardware ID from resetting a rapid reconnect after a Pico reboot.
+        client_id=MQTT_CLIENT_ID,
         server=broker_address
     )
 
