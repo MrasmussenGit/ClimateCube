@@ -12,8 +12,9 @@ The imaging script verifies the board type, installs `umqtt.simple`, copies all
 ClimateCube files without copying `__pycache__`, verifies the installation, and
 restarts the Pico. It securely prompts for Wi-Fi settings, hides the
 password while it is entered, and removes its temporary configuration after
-imaging. The MQTT server is found at `climatecube.local`, so customers do not
-need to know or enter its address. Sensitive values do not need to be stored in the repository workspace.
+imaging. The imaging computer finds the MQTT server at `climatecube.local` and
+writes its current IP address to the Pico, so customers do not need to know or
+enter it. Sensitive values do not need to be stored in the repository workspace.
 If an older `pico/config.py` contains credentials, delete it after confirming
 the new imaging workflow; Git ignores it, but it remains readable locally.
 

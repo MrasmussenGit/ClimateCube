@@ -7,6 +7,7 @@ PICO_DIR="$PROJECT_DIR/pico"
 CONFIG_FILE=""
 TEMP_CONFIG_FILE=""
 PORT="auto"
+BROKER_HOST="climatecube.local"
 
 cleanup() {
     if [[ -n "$TEMP_CONFIG_FILE" && -f "$TEMP_CONFIG_FILE" ]]; then
@@ -72,6 +73,16 @@ else
     MPREMOTE="$(command -v mpremote)"
 fi
 
+BROKER="$(getent ahostsv4 "$BROKER_HOST" | awk 'NR == 1 { print $1 }')"
+
+if [[ -z "$BROKER" ]]; then
+    echo "ERROR: Cannot find the ClimateCube server at $BROKER_HOST." >&2
+    echo "Confirm the server is running and connected to this network." >&2
+    exit 1
+fi
+
+echo "ClimateCube server found at $BROKER"
+
 if [[ -z "$CONFIG_FILE" ]]; then
     echo
     echo "Enter this Pico's settings. The password will not be displayed or saved."
@@ -103,6 +114,7 @@ if [[ -z "$CONFIG_FILE" ]]; then
     {
         printf 'SSID = "%s"\n' "$(escape_python_string "$SSID")"
         printf 'PASSWORD = "%s"\n' "$(escape_python_string "$PASSWORD")"
+        printf 'BROKER = "%s"\n' "$BROKER"
         printf 'READING_INTERVAL_SEC = %s\n' "$READING_INTERVAL_SEC"
     } > "$TEMP_CONFIG_FILE"
     CONFIG_FILE="$TEMP_CONFIG_FILE"
@@ -111,7 +123,16 @@ elif [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
-for setting in SSID PASSWORD READING_INTERVAL_SEC; do
+if [[ "$CONFIG_FILE" != "$TEMP_CONFIG_FILE" ]]; then
+    SOURCE_CONFIG_FILE="$CONFIG_FILE"
+    TEMP_CONFIG_FILE="$(mktemp)"
+    chmod 600 "$TEMP_CONFIG_FILE"
+    grep -Ev '^BROKER[[:space:]]*=' "$SOURCE_CONFIG_FILE" > "$TEMP_CONFIG_FILE"
+    printf 'BROKER = "%s"\n' "$BROKER" >> "$TEMP_CONFIG_FILE"
+    CONFIG_FILE="$TEMP_CONFIG_FILE"
+fi
+
+for setting in SSID PASSWORD BROKER READING_INTERVAL_SEC; do
     if ! grep -Eq "^${setting}[[:space:]]*=[[:space:]]*[^[:space:]].*" "$CONFIG_FILE"; then
         echo "ERROR: $setting is missing from $CONFIG_FILE" >&2
         exit 1
@@ -164,7 +185,7 @@ $MPREMOTE "${CONNECT[@]}" cp "$CONFIG_FILE" :config.py
 echo
 echo "Verifying image..."
 $MPREMOTE "${CONNECT[@]}" exec \
-    "from umqtt.simple import MQTTClient; import config, defaults, sensor, display; print('Broker:', defaults.BROKER); print('Image verification passed')"
+    "from umqtt.simple import MQTTClient; import config, sensor, display; print('Broker:', config.BROKER); print('Image verification passed')"
 
 echo
 echo "Restarting Pico W..."

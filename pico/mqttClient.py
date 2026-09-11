@@ -3,10 +3,8 @@ import binascii
 import json
 import device
 import os
-import socket
 
-from config import READING_INTERVAL_SEC
-from defaults import BROKER
+from config import BROKER, READING_INTERVAL_SEC
 
 DEVICE_ID = device.get_device_id()
 MQTT_CLIENT_ID = "{}-{}".format(
@@ -21,16 +19,11 @@ client = None
 def connect():
     global client
 
-    # MicroPython's MQTT client can reset the connection when given an mDNS
-    # hostname even though socket resolution succeeds. Resolve it explicitly
-    # and pass the IPv4 address to MQTTClient.
-    broker_address = socket.getaddrinfo(BROKER, 1883)[0][-1][0]
-
     client = MQTTClient(
         # A new ID per boot prevents a stale broker connection with the same
         # hardware ID from resetting a rapid reconnect after a Pico reboot.
         client_id=MQTT_CLIENT_ID,
-        server=broker_address
+        server=BROKER
     )
 
     client.connect()
