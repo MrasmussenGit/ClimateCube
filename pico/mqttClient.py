@@ -1,6 +1,7 @@
 from umqtt.simple import MQTTClient
 import json
 import device
+import socket
 
 from config import READING_INTERVAL_SEC
 from defaults import BROKER
@@ -14,9 +15,14 @@ client = None
 def connect():
     global client
 
+    # MicroPython's MQTT client can reset the connection when given an mDNS
+    # hostname even though socket resolution succeeds. Resolve it explicitly
+    # and pass the IPv4 address to MQTTClient.
+    broker_address = socket.getaddrinfo(BROKER, 1883)[0][-1][0]
+
     client = MQTTClient(
         client_id=DEVICE_ID,
-        server=BROKER
+        server=broker_address
     )
 
     client.connect()
