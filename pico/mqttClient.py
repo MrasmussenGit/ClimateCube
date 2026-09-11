@@ -2,7 +2,8 @@ from umqtt.simple import MQTTClient
 import json
 import device
 
-from config import BROKER, READING_INTERVAL_SEC
+from config import READING_INTERVAL_SEC
+from defaults import BROKER
 
 DEVICE_ID = device.get_device_id()
 

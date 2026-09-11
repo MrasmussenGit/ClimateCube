@@ -10,21 +10,9 @@ echo "===================================="
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_USER="${SUDO_USER:-$(id -un)}"
 
-# Create config.py if missing
-if [ ! -f pico/config.py ]; then
-    echo ""
-    echo "Creating pico/config.py from template..."
-    cp pico/config_template.py pico/config.py
-
-    echo ""
-    echo "IMPORTANT:"
-    echo "Edit pico/config.py and populate:"
-    echo "  SSID"
-    echo "  PASSWORD"
-    echo "  BROKER"
-    echo "  READING_INTERVAL_SEC"
-    echo ""
-fi
+echo
+echo "Pico credentials are collected securely by scripts/image_pico.sh"
+echo "and do not need to be stored in this workspace."
 
 # Create firmware folder if missing
 if [ ! -d firmware ]; then
