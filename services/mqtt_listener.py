@@ -34,6 +34,12 @@ def ensure_schema():
                 "ADD COLUMN reading_interval_sec INTEGER"
             )
 
+        if "hardware_json" not in columns:
+            conn.execute(
+                "ALTER TABLE sensor "
+                "ADD COLUMN hardware_json TEXT"
+            )
+
 
 def on_message(client, userdata, msg):
 
@@ -45,6 +51,14 @@ def on_message(client, userdata, msg):
 
     ip_address = payload.get("ip_address")
     reading_interval_sec = payload.get("reading_interval_sec")
+    hardware = payload.get("hardware")
+    hardware_json = None
+
+    if isinstance(hardware, dict):
+        hardware_json = json.dumps({
+            "bme280": bool(hardware.get("bme280")),
+            "oled": bool(hardware.get("oled"))
+        })
 
     if reading_interval_sec is not None:
         reading_interval_sec = int(reading_interval_sec)
@@ -86,9 +100,10 @@ def on_message(client, userdata, msg):
                 install_date,
                 ip_address,
                 active_flag,
-                reading_interval_sec
+                reading_interval_sec,
+                hardware_json
             )
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
             """,
             (
                 payload["device_id"],
@@ -96,7 +111,8 @@ def on_message(client, userdata, msg):
                 "BME280",
                 ip_address,
                 1,
-                reading_interval_sec
+                reading_interval_sec,
+                hardware_json
             )
         )
 
@@ -116,12 +132,14 @@ def on_message(client, userdata, msg):
             """
             UPDATE sensor
             SET ip_address = COALESCE(?, ip_address),
-                reading_interval_sec = COALESCE(?, reading_interval_sec)
+                reading_interval_sec = COALESCE(?, reading_interval_sec),
+                hardware_json = COALESCE(?, hardware_json)
             WHERE sensor_id = ?
             """,
             (
                 ip_address,
                 reading_interval_sec,
+                hardware_json,
                 sensor_id
             )
         )

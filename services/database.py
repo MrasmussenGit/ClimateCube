@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def get_latest_readings(include_inactive=False):
                 s.ip_address,
                 s.active_flag,
                 s.reading_interval_sec,
+                s.hardware_json,
                 r.pico_ts AS reading_time,
                 r.insert_ts AS last_contact_time,
                 r.temperature_c,
@@ -50,7 +52,20 @@ def get_latest_readings(include_inactive=False):
             (1 if include_inactive else 0,)
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    readings = []
+
+    for row in rows:
+        reading = dict(row)
+        hardware_json = reading.pop("hardware_json", None)
+
+        try:
+            reading["hardware"] = json.loads(hardware_json) if hardware_json else None
+        except (TypeError, json.JSONDecodeError):
+            reading["hardware"] = None
+
+        readings.append(reading)
+
+    return readings
 
 
 def get_sensor(sensor_id):

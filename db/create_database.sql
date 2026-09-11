@@ -27,7 +27,8 @@ CREATE TABLE sensor (
     ip_address     TEXT,
     active_flag    INTEGER NOT NULL DEFAULT 1,
     first_seen_ts  TEXT,
-    reading_interval_sec INTEGER
+    reading_interval_sec INTEGER,
+    hardware_json  TEXT
 );
 
 -- ==========================================

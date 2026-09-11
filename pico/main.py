@@ -192,6 +192,10 @@ while True:
         "device_id": "CC-0001",
         "ip_address": ip_address,
         "timestamp": timestamp,
+        "hardware": {
+            "bme280": True,
+            "oled": display.is_available()
+        },
         "temperature_c": data["temperature_c"],
         "humidity_pct": data["humidity_pct"],
         "pressure_hpa": data["pressure_hpa"]

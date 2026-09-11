@@ -28,6 +28,9 @@
         .temperature { margin: 20px 0; color: #d35400; font-size: 42px; font-weight: bold; }
         .reading { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
         .label { color: var(--muted); }
+        .hardware-list { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
+        .hardware-badge { padding: 3px 7px; border-radius: 999px; background: var(--border); color: var(--text); font-size: 12px; font-weight: bold; }
+        .hardware-unknown { color: var(--muted); font-size: 12px; }
         .timestamp { margin-top: 18px; color: var(--muted); font-size: 13px; }
         .communication-status { margin-top: 9px; color: #287a4d; font-size: 13px; font-weight: bold; }
         .communication-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: #2e9d62; }
@@ -95,6 +98,17 @@
                     <div class="reading">
                         <span class="label">IP address</span>
                         <span class="ip-address">{{ reading.ip_address or "Unknown" }}</span>
+                    </div>
+                    <div class="reading">
+                        <span class="label">Hardware</span>
+                        <span class="hardware-list">
+                            {% if reading.hardware %}
+                                {% if reading.hardware.bme280 %}<span class="hardware-badge">BME280</span>{% endif %}
+                                {% if reading.hardware.oled %}<span class="hardware-badge">OLED</span>{% endif %}
+                            {% else %}
+                                <span class="hardware-unknown">Not reported yet</span>
+                            {% endif %}
+                        </span>
                     </div>
                     <div class="timestamp">
                         Reading time:
@@ -258,6 +272,27 @@
                 Number(reading.pressure_hpa).toFixed(2) + " hPa";
             card.querySelector(".device-id").textContent = reading.device_id;
             card.querySelector(".ip-address").textContent = reading.ip_address || "Unknown";
+
+            const hardwareList = card.querySelector(".hardware-list");
+            hardwareList.replaceChildren();
+
+            if (reading.hardware) {
+                [
+                    ["bme280", "BME280"],
+                    ["oled", "OLED"]
+                ].forEach(function (hardware) {
+                    if (!reading.hardware[hardware[0]]) return;
+                    const badge = document.createElement("span");
+                    badge.className = "hardware-badge";
+                    badge.textContent = hardware[1];
+                    hardwareList.appendChild(badge);
+                });
+            } else {
+                const unknown = document.createElement("span");
+                unknown.className = "hardware-unknown";
+                unknown.textContent = "Not reported yet";
+                hardwareList.appendChild(unknown);
+            }
 
             const temperature = card.querySelector(".temperature");
             temperature.dataset.temperatureC = reading.temperature_c;

@@ -33,6 +33,10 @@ def _ready():
     return oled is not None or init()
 
 
+def is_available():
+    return oled is not None
+
+
 def _show(draw):
     global oled
 
