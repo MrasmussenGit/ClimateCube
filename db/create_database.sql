@@ -63,6 +63,7 @@ CREATE TABLE sensor_reading (
     temperature_c REAL NOT NULL,
     humidity_pct REAL NOT NULL,
     pressure_hpa REAL NOT NULL,
+    gas_resistance_ohms INTEGER,
 
     FOREIGN KEY (sensor_id)
         REFERENCES sensor(sensor_id)

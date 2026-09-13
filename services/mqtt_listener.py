@@ -23,21 +23,51 @@ def on_disconnect(client, userdata, reason_code):
 
 def ensure_schema():
     with sqlite3.connect(DB_FILE) as conn:
-        columns = {
+        sensor_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(sensor)")
         }
 
-        if "reading_interval_sec" not in columns:
+        if "reading_interval_sec" not in sensor_columns:
             conn.execute(
                 "ALTER TABLE sensor "
                 "ADD COLUMN reading_interval_sec INTEGER"
             )
 
-        if "hardware_json" not in columns:
+        if "hardware_json" not in sensor_columns:
             conn.execute(
                 "ALTER TABLE sensor "
                 "ADD COLUMN hardware_json TEXT"
+            )
+
+        reading_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(sensor_reading)")
+        }
+
+        if "insert_ts" not in reading_columns:
+            conn.execute(
+                "ALTER TABLE sensor_reading "
+                "ADD COLUMN insert_ts DATETIME"
+            )
+
+            if "reading_ts" in reading_columns:
+                conn.execute(
+                    "UPDATE sensor_reading "
+                    "SET insert_ts = reading_ts "
+                    "WHERE insert_ts IS NULL"
+                )
+            else:
+                conn.execute(
+                    "UPDATE sensor_reading "
+                    "SET insert_ts = CURRENT_TIMESTAMP "
+                    "WHERE insert_ts IS NULL"
+                )
+
+        if "gas_resistance_ohms" not in reading_columns:
+            conn.execute(
+                "ALTER TABLE sensor_reading "
+                "ADD COLUMN gas_resistance_ohms INTEGER"
             )
 
 
@@ -57,8 +87,11 @@ def on_message(client, userdata, msg):
     if isinstance(hardware, dict):
         hardware_json = json.dumps({
             "bme280": bool(hardware.get("bme280")),
+            "bme688": bool(hardware.get("bme688")),
             "oled": bool(hardware.get("oled"))
         })
+
+    sensor_type = "BME688" if hardware and hardware.get("bme688") else "BME280"
 
     if reading_interval_sec is not None:
         reading_interval_sec = int(reading_interval_sec)
@@ -108,7 +141,7 @@ def on_message(client, userdata, msg):
             (
                 payload["device_id"],
                 display_name,
-                "BME280",
+                sensor_type,
                 ip_address,
                 1,
                 reading_interval_sec,
@@ -133,13 +166,15 @@ def on_message(client, userdata, msg):
             UPDATE sensor
             SET ip_address = COALESCE(?, ip_address),
                 reading_interval_sec = COALESCE(?, reading_interval_sec),
-                hardware_json = COALESCE(?, hardware_json)
+                hardware_json = COALESCE(?, hardware_json),
+                sensor_type = ?
             WHERE sensor_id = ?
             """,
             (
                 ip_address,
                 reading_interval_sec,
                 hardware_json,
+                sensor_type,
                 sensor_id
             )
         )
@@ -150,18 +185,21 @@ def on_message(client, userdata, msg):
         (
             sensor_id,
             pico_ts,
+            insert_ts,
             temperature_c,
             humidity_pct,
-            pressure_hpa
+            pressure_hpa,
+            gas_resistance_ohms
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
         """,
         (
             sensor_id,
             payload["timestamp"],
             payload["temperature_c"],
             payload["humidity_pct"],
-            payload["pressure_hpa"]
+            payload["pressure_hpa"],
+            payload.get("gas_resistance_ohms")
         )
     )
 
@@ -183,14 +221,18 @@ def safe_on_message(client, userdata, msg):
         print(f"Unexpected MQTT message error: {error}")
 
 
-ensure_schema()
+def main():
+    ensure_schema()
 
-client = mqtt.Client()
+    client = mqtt.Client()
 
-client.on_connect = on_connect
-client.on_disconnect = on_disconnect
-client.on_message = safe_on_message
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+    client.on_message = safe_on_message
 
-client.connect("localhost", 1883)
+    client.connect("localhost", 1883)
+    client.loop_forever()
 
-client.loop_forever()
+
+if __name__ == "__main__":
+    main()

@@ -30,6 +30,7 @@
         .label { color: var(--muted); }
         .hardware-list { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
         .hardware-badge { padding: 3px 7px; border-radius: 999px; background: var(--border); color: var(--text); font-size: 12px; font-weight: bold; }
+        .hardware-icon { margin-right: 4px; color: #287a4d; font-size: 15px; line-height: 10px; }
         .hardware-unknown { color: var(--muted); font-size: 12px; }
         .timestamp { margin-top: 18px; color: var(--muted); font-size: 13px; }
         .communication-status { margin-top: 9px; color: #287a4d; font-size: 13px; font-weight: bold; }
@@ -91,6 +92,14 @@
                         <span class="label">Pressure</span>
                         <span class="pressure">{{ "%.2f"|format(reading.pressure_hpa) }} hPa</span>
                     </div>
+                    <div class="reading gas-reading"{% if reading.gas_resistance_ohms is none %} hidden{% endif %}>
+                        <span class="label">Gas resistance</span>
+                        <span class="gas-resistance" data-gas-ohms="{{ reading.gas_resistance_ohms or '' }}">
+                            {% if reading.gas_resistance_ohms is not none %}
+                                {{ "%.2f"|format(reading.gas_resistance_ohms / 1000000) }} MΩ
+                            {% endif %}
+                        </span>
+                    </div>
                     <div class="reading">
                         <span class="label">Device</span>
                         <span class="device-id">{{ reading.device_id }}</span>
@@ -104,6 +113,7 @@
                         <span class="hardware-list">
                             {% if reading.hardware %}
                                 {% if reading.hardware.bme280 %}<span class="hardware-badge">BME280</span>{% endif %}
+                                {% if reading.hardware.bme688 %}<span class="hardware-badge"><span class="hardware-icon" aria-hidden="true">≋</span>BME688</span>{% endif %}
                                 {% if reading.hardware.oled %}<span class="hardware-badge">OLED</span>{% endif %}
                             {% else %}
                                 <span class="hardware-unknown">Not reported yet</span>
@@ -198,6 +208,15 @@
             unitButton.textContent = temperatureUnit === "C" ? "Show °F" : "Show °C";
         }
 
+        function formatGasResistance(ohms) {
+            const value = Number(ohms);
+
+            if (!Number.isFinite(value)) return "";
+            if (value >= 1000000) return (value / 1000000).toFixed(2) + " MΩ";
+            if (value >= 1000) return (value / 1000).toFixed(2) + " kΩ";
+            return value.toFixed(0) + " Ω";
+        }
+
         function formatDuration(totalSeconds) {
             const seconds = Math.max(0, Math.ceil(totalSeconds));
 
@@ -270,6 +289,19 @@
                 Number(reading.humidity_pct).toFixed(2) + " %";
             card.querySelector(".pressure").textContent =
                 Number(reading.pressure_hpa).toFixed(2) + " hPa";
+
+            const gasReading = card.querySelector(".gas-reading");
+            const gasResistance = card.querySelector(".gas-resistance");
+            const hasGasReading = reading.gas_resistance_ohms !== null &&
+                reading.gas_resistance_ohms !== undefined;
+            gasReading.hidden = !hasGasReading;
+            gasResistance.dataset.gasOhms = hasGasReading
+                ? reading.gas_resistance_ohms
+                : "";
+            gasResistance.textContent = hasGasReading
+                ? formatGasResistance(reading.gas_resistance_ohms)
+                : "";
+
             card.querySelector(".device-id").textContent = reading.device_id;
             card.querySelector(".ip-address").textContent = reading.ip_address || "Unknown";
 
@@ -279,12 +311,22 @@
             if (reading.hardware) {
                 [
                     ["bme280", "BME280"],
+                    ["bme688", "BME688"],
                     ["oled", "OLED"]
                 ].forEach(function (hardware) {
                     if (!reading.hardware[hardware[0]]) return;
                     const badge = document.createElement("span");
                     badge.className = "hardware-badge";
-                    badge.textContent = hardware[1];
+
+                    if (hardware[0] === "bme688") {
+                        const icon = document.createElement("span");
+                        icon.className = "hardware-icon";
+                        icon.setAttribute("aria-hidden", "true");
+                        icon.textContent = "≋";
+                        badge.appendChild(icon);
+                    }
+
+                    badge.appendChild(document.createTextNode(hardware[1]));
                     hardwareList.appendChild(badge);
                 });
             } else {

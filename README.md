@@ -1,5 +1,16 @@
 # ClimateCube
 
+## Deploy the Hub
+
+After pushing changes, connect to the Pi Zero hub and run:
+
+	cd ~/ClimateCube
+	./scripts/deploy_hub.sh
+
+The deployment requires a clean working tree, performs a fast-forward-only Git
+pull, restarts the MQTT listener so database migrations run before new messages
+are processed, restarts the web server, and verifies both services are active.
+
 ## Image a Pico W
 
 For a fresh board, first flash the current Raspberry Pi Pico W MicroPython UF2.
@@ -8,7 +19,8 @@ Connect the Pico W by USB and run:
 
 	./scripts/image_pico.sh
 
-The imaging script verifies the board type, installs `umqtt.simple`, copies all
+The imaging script verifies the board type, installs `umqtt.simple` and the
+BME680/BME688 sensor driver, copies all
 ClimateCube files without copying `__pycache__`, verifies the installation, and
 restarts the Pico. It securely prompts for Wi-Fi settings, hides the
 password while it is entered, and removes its temporary configuration after

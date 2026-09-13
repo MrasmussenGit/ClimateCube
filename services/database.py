@@ -36,7 +36,8 @@ def get_latest_readings(include_inactive=False):
                 r.insert_ts AS last_contact_time,
                 r.temperature_c,
                 r.humidity_pct,
-                r.pressure_hpa
+                r.pressure_hpa,
+                r.gas_resistance_ohms
             FROM sensor_reading AS r
             JOIN sensor AS s
                 ON s.sensor_id = r.sensor_id
@@ -162,7 +163,8 @@ def get_temperature_history(sensor_id, range_name):
                 MAX(COALESCE(r.pico_ts, r.insert_ts)) AS reading_time,
                 AVG(r.temperature_c) AS temperature_c,
                 AVG(r.humidity_pct) AS humidity_pct,
-                AVG(r.pressure_hpa) AS pressure_hpa
+                AVG(r.pressure_hpa) AS pressure_hpa,
+                AVG(r.gas_resistance_ohms) AS gas_resistance_ohms
             FROM sensor_reading AS r
             CROSS JOIN latest
             WHERE r.sensor_id = ?

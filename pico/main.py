@@ -193,18 +193,22 @@ while True:
         "ip_address": ip_address,
         "timestamp": timestamp,
         "hardware": {
-            "bme280": True,
+            "bme280": sensor.get_sensor_type() == "BME280",
+            "bme688": sensor.get_sensor_type() == "BME688",
             "oled": display.is_available()
         },
         "temperature_c": data["temperature_c"],
         "humidity_pct": data["humidity_pct"],
-        "pressure_hpa": data["pressure_hpa"]
+        "pressure_hpa": data["pressure_hpa"],
+        "gas_resistance_ohms": data.get("gas_resistance_ohms")
     }
 
     log(timestamp)
     log(f"Temp = {data['temperature_c']} C")
     log(f"Humidity = {data['humidity_pct']} %")
     log(f"Pressure = {data['pressure_hpa']} hPa")
+    if data.get("gas_resistance_ohms") is not None:
+        log(f"Gas resistance = {data['gas_resistance_ohms']} ohms")
     log("")
 
     while True:

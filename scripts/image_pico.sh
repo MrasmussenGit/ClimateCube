@@ -164,6 +164,8 @@ fi
 echo
 echo "Installing MicroPython dependencies..."
 $MPREMOTE "${CONNECT[@]}" mip install umqtt.simple
+$MPREMOTE "${CONNECT[@]}" mip install \
+    https://raw.githubusercontent.com/robert-hh/BME680-Micropython/b0902dc45430161ce1a2edcff90cfa266a9550da/bme680.py
 
 echo
 echo "Copying ClimateCube application..."
