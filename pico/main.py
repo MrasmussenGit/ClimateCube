@@ -156,7 +156,7 @@ while True:
         retry_delay = SENSOR_RETRY_DELAYS_SEC[sensor_retry_index]
 
         if not sensor_missing:
-            log("BME280 sensor not detected")
+            log("Environmental sensor not detected")
             sensor_missing = True
 
         # Refresh the warning on every retry. This also initializes an OLED
@@ -170,7 +170,7 @@ while True:
         continue
 
     if sensor_missing:
-        log("BME280 sensor detected; resuming readings")
+        log("Environmental sensor detected; resuming readings")
         sensor_missing = False
         sensor_retry_index = 0
 

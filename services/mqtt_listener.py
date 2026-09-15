@@ -71,6 +71,31 @@ def ensure_schema():
             )
 
 
+def get_hardware_metadata(payload):
+    hardware = payload.get("hardware")
+
+    if isinstance(hardware, dict):
+        normalized_hardware = {
+            "bme280": bool(hardware.get("bme280")),
+            "bme688": bool(hardware.get("bme688")),
+            "oled": bool(hardware.get("oled"))
+        }
+
+        if normalized_hardware["bme688"]:
+            sensor_type = "BME688"
+        elif normalized_hardware["bme280"]:
+            sensor_type = "BME280"
+        else:
+            sensor_type = None
+
+        return json.dumps(normalized_hardware), sensor_type
+
+    if payload.get("gas_resistance_ohms") is not None:
+        return None, "BME688"
+
+    return None, None
+
+
 def on_message(client, userdata, msg):
 
     print("MESSAGE RECEIVED")
@@ -81,17 +106,7 @@ def on_message(client, userdata, msg):
 
     ip_address = payload.get("ip_address")
     reading_interval_sec = payload.get("reading_interval_sec")
-    hardware = payload.get("hardware")
-    hardware_json = None
-
-    if isinstance(hardware, dict):
-        hardware_json = json.dumps({
-            "bme280": bool(hardware.get("bme280")),
-            "bme688": bool(hardware.get("bme688")),
-            "oled": bool(hardware.get("oled"))
-        })
-
-    sensor_type = "BME688" if hardware and hardware.get("bme688") else "BME280"
+    hardware_json, sensor_type = get_hardware_metadata(payload)
 
     if reading_interval_sec is not None:
         reading_interval_sec = int(reading_interval_sec)
@@ -141,7 +156,7 @@ def on_message(client, userdata, msg):
             (
                 payload["device_id"],
                 display_name,
-                sensor_type,
+                sensor_type or "Unknown",
                 ip_address,
                 1,
                 reading_interval_sec,
@@ -167,7 +182,7 @@ def on_message(client, userdata, msg):
             SET ip_address = COALESCE(?, ip_address),
                 reading_interval_sec = COALESCE(?, reading_interval_sec),
                 hardware_json = COALESCE(?, hardware_json),
-                sensor_type = ?
+                sensor_type = COALESCE(?, sensor_type)
             WHERE sensor_id = ?
             """,
             (
