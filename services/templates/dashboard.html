@@ -155,10 +155,13 @@
     {% endif %}
 
     <div class="storage-status" aria-label="Server storage">
-        <span class="storage-item">Database: <strong id="database-size">{{ storage_info.database_size }}</strong></span>
-        <span class="storage-item">Available: <strong id="available-size">{{ storage_info.available_size }}</strong> (<span id="available-percent">{{ storage_info.available_percent }}</span>%)</span>
-        <span class="storage-item">Free: <strong id="free-size">{{ storage_info.free_size }}</strong></span>
-        <span class="storage-item">Drive: <strong id="total-size">{{ storage_info.total_size }}</strong></span>
+        <span class="storage-item">Database size: <strong id="database-size">{{ storage_info.database_size }}</strong></span>
+        <span class="storage-item">
+            Disk space available:
+            <strong id="available-size">{{ storage_info.available_size }}</strong>
+            of <span id="total-size">{{ storage_info.total_size }}</span>
+            (<span id="available-percent">{{ storage_info.available_percent }}</span>%)
+        </span>
     </div>
 
     <footer class="server-info">
@@ -411,7 +414,6 @@
                 document.getElementById("database-size").textContent = storage.database_size;
                 document.getElementById("available-size").textContent = storage.available_size;
                 document.getElementById("available-percent").textContent = storage.available_percent;
-                document.getElementById("free-size").textContent = storage.free_size;
                 document.getElementById("total-size").textContent = storage.total_size;
                 document.getElementById("warning-available").textContent = storage.available_size;
                 document.getElementById("warning-percent").textContent = storage.available_percent;

@@ -66,7 +66,6 @@ def get_storage_info():
     database_path = DB_FILE.resolve()
     filesystem = os.statvfs(database_path.parent)
     total_bytes = filesystem.f_blocks * filesystem.f_frsize
-    free_bytes = filesystem.f_bfree * filesystem.f_frsize
     available_bytes = filesystem.f_bavail * filesystem.f_frsize
     available_percent = (
         available_bytes / total_bytes * 100 if total_bytes else 0
@@ -79,8 +78,6 @@ def get_storage_info():
         "database_size": format_bytes(database_bytes),
         "total_bytes": total_bytes,
         "total_size": format_bytes(total_bytes),
-        "free_bytes": free_bytes,
-        "free_size": format_bytes(free_bytes),
         "available_bytes": available_bytes,
         "available_size": format_bytes(available_bytes),
         "available_percent": round(available_percent, 1),
