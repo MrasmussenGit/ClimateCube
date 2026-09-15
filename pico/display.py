@@ -34,7 +34,19 @@ def _ready():
 
 
 def is_available():
-    return oled is not None
+    global oled
+
+    try:
+        i2c = I2C(0, scl=Pin(5), sda=Pin(4))
+        detected = 0x3c in i2c.scan()
+    except OSError:
+        detected = False
+
+    if not detected:
+        oled = None
+        return False
+
+    return oled is not None or init()
 
 
 def _show(draw):
