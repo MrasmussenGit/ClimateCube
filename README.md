@@ -11,6 +11,11 @@ The deployment requires a clean working tree, performs a fast-forward-only Git
 pull, restarts the MQTT listener so database migrations run before new messages
 are processed, restarts the web server, and verifies both services are active.
 
+The dashboard reports the database size and drive capacity. It displays a
+warning when space available to the service account falls below 10% of the
+drive. Set `CLIMATECUBE_STORAGE_WARNING_PERCENT` in the web service environment
+to use a different percentage.
+
 ## Image a Pico W
 
 For a fresh board, first flash the current Raspberry Pi Pico W MicroPython UF2.

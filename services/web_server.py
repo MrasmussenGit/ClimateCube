@@ -1,3 +1,4 @@
+import os
 import socket
 
 from flask import (
@@ -12,6 +13,7 @@ from flask import (
 
 try:
     from .database import (
+        DB_FILE,
         HISTORY_RANGES,
         get_latest_readings,
         get_hidden_sensor_count,
@@ -23,6 +25,7 @@ try:
     )
 except ImportError:
     from database import (
+        DB_FILE,
         HISTORY_RANGES,
         get_latest_readings,
         get_hidden_sensor_count,
@@ -35,6 +38,55 @@ except ImportError:
 
 
 app = Flask(__name__)
+
+
+def get_storage_warning_percent():
+    try:
+        threshold = float(os.environ.get(
+            "CLIMATECUBE_STORAGE_WARNING_PERCENT",
+            "10"
+        ))
+    except ValueError:
+        threshold = 10.0
+
+    return min(100.0, max(0.0, threshold))
+
+
+def format_bytes(byte_count):
+    value = float(byte_count)
+
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            precision = 0 if unit == "B" else 1
+            return f"{value:.{precision}f} {unit}"
+        value /= 1024
+
+
+def get_storage_info():
+    database_path = DB_FILE.resolve()
+    filesystem = os.statvfs(database_path.parent)
+    total_bytes = filesystem.f_blocks * filesystem.f_frsize
+    free_bytes = filesystem.f_bfree * filesystem.f_frsize
+    available_bytes = filesystem.f_bavail * filesystem.f_frsize
+    available_percent = (
+        available_bytes / total_bytes * 100 if total_bytes else 0
+    )
+    warning_percent = get_storage_warning_percent()
+    database_bytes = database_path.stat().st_size if database_path.exists() else 0
+
+    return {
+        "database_bytes": database_bytes,
+        "database_size": format_bytes(database_bytes),
+        "total_bytes": total_bytes,
+        "total_size": format_bytes(total_bytes),
+        "free_bytes": free_bytes,
+        "free_size": format_bytes(free_bytes),
+        "available_bytes": available_bytes,
+        "available_size": format_bytes(available_bytes),
+        "available_percent": round(available_percent, 1),
+        "warning_percent": warning_percent,
+        "is_low": available_percent < warning_percent
+    }
 
 
 def get_server_info():
@@ -64,7 +116,8 @@ def dashboard():
         readings=get_latest_readings(include_inactive=show_hidden),
         hidden_sensor_count=get_hidden_sensor_count(),
         show_hidden=show_hidden,
-        server_info=get_server_info()
+        server_info=get_server_info(),
+        storage_info=get_storage_info()
     )
 
 
@@ -72,6 +125,11 @@ def dashboard():
 def latest_api():
     show_hidden = request.args.get("show_hidden") == "1"
     return jsonify(get_latest_readings(include_inactive=show_hidden))
+
+
+@app.route("/api/storage")
+def storage_api():
+    return jsonify(get_storage_info())
 
 
 @app.route("/settings")
