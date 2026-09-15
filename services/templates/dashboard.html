@@ -9,8 +9,8 @@
             (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     </script>
     <style>
-        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #e5e9ed; --button: #243447; --button-hover: #3a5068; --shadow: rgba(0, 0, 0, 0.08); --warning-bg: #fff4e5; --warning-border: #d97706; --warning-text: #8a3d00; }
-        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --button-hover: #ffffff; --shadow: rgba(0, 0, 0, 0.3); --warning-bg: #3b2915; --warning-border: #f59e0b; --warning-text: #ffd38a; }
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #e5e9ed; --button: #243447; --button-hover: #3a5068; --shadow: rgba(0, 0, 0, 0.08); --warning-bg: #fff4e5; --warning-border: #d97706; --warning-text: #8a3d00; --critical-bg: #fff0ee; --critical-border: #d92d20; --critical-text: #b42318; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --button-hover: #ffffff; --shadow: rgba(0, 0, 0, 0.3); --warning-bg: #3b2915; --warning-border: #f59e0b; --warning-text: #ffd38a; --critical-bg: #411d1a; --critical-border: #f97066; --critical-text: #ffb4ad; }
         body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         .header-actions { display: flex; align-items: center; gap: 10px; }
@@ -44,9 +44,14 @@
         .history-link { display: inline-block; margin-top: 18px; color: var(--text); font-weight: bold; text-decoration: none; }
         .history-link:hover { text-decoration: underline; }
         .storage-warning { margin-top: 24px; padding: 14px 16px; border: 1px solid var(--warning-border); border-left-width: 5px; border-radius: 6px; background: var(--warning-bg); color: var(--warning-text); font-weight: bold; }
+        .storage-warning.critical { border-color: var(--critical-border); background: var(--critical-bg); color: var(--critical-text); }
         .storage-warning[hidden] { display: none; }
         .storage-status { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 18px; margin-top: 30px; }
+        .storage-status.warning { color: var(--warning-text); }
+        .storage-status.critical { color: var(--critical-text); }
         .storage-item { white-space: nowrap; }
+        .storage-indicator { margin-right: 4px; font-weight: bold; }
+        .storage-indicator[hidden] { display: none; }
         .server-info { margin-top: 30px; color: var(--muted); font-size: 13px; text-align: center; }
         .storage-status + .server-info { margin-top: 8px; }
         .empty { padding: 20px; background: var(--surface); border-radius: 12px; }
@@ -78,10 +83,12 @@
         </div>
     </div>
 
-    <div id="storage-warning" class="storage-warning" role="alert"{% if not storage_info.is_low %} hidden{% endif %}>
-        Low disk space: <span id="warning-available">{{ storage_info.available_size }}</span>
-        available (<span id="warning-percent">{{ storage_info.available_percent }}</span>%).
-        Warning threshold: {{ storage_info.warning_percent }}%.
+    <div id="storage-warning" class="storage-warning{% if storage_info.status == 'critical' %} critical{% endif %}" role="alert"{% if not storage_info.is_low %} hidden{% endif %}>
+        <span id="warning-label">{% if storage_info.status == "critical" %}Critical disk space{% else %}Low disk space{% endif %}</span>:
+        <span id="warning-details">
+            <span id="warning-available">{{ storage_info.available_size }}</span>
+            available (<span id="warning-percent">{{ storage_info.available_percent }}</span>%).
+        </span>
     </div>
 
     {% if readings %}
@@ -154,9 +161,11 @@
         <p class="empty">No sensor readings found. Waiting for sensors…</p>
     {% endif %}
 
-    <div class="storage-status" aria-label="Server storage">
+    <div id="storage-status" class="storage-status{% if storage_info.status != 'normal' %} {{ storage_info.status }}{% endif %}" aria-label="Server storage">
         <span class="storage-item">Database size: <strong id="database-size">{{ storage_info.database_size }}</strong></span>
         <span class="storage-item">
+            <span id="storage-indicator" class="storage-indicator"{% if storage_info.status == "normal" %} hidden{% endif %} aria-hidden="true">&#9888;</span>
+            <span id="storage-state" class="storage-indicator"{% if storage_info.status == "normal" %} hidden{% endif %}>{% if storage_info.status == "critical" %}Critical:{% else %}Low:{% endif %}</span>
             Disk space available:
             <strong id="available-size">{{ storage_info.available_size }}</strong>
             of <span id="total-size">{{ storage_info.total_size }}</span>
@@ -175,6 +184,9 @@
         const unitButton = document.getElementById("unit-button");
         const updateStatus = document.getElementById("update-status");
         const storageWarning = document.getElementById("storage-warning");
+        const storageStatus = document.getElementById("storage-status");
+        const storageIndicator = document.getElementById("storage-indicator");
+        const storageState = document.getElementById("storage-state");
         const temperatures = document.querySelectorAll(".temperature");
         const latestApiUrl = "/api/latest{% if show_hidden %}?show_hidden=1{% endif %}";
         const pollIntervalMilliseconds = 10000;
@@ -417,10 +429,22 @@
                 document.getElementById("total-size").textContent = storage.total_size;
                 document.getElementById("warning-available").textContent = storage.available_size;
                 document.getElementById("warning-percent").textContent = storage.available_percent;
+                document.getElementById("warning-label").textContent =
+                    storage.status === "critical" ? "Critical disk space" : "Low disk space";
+                document.getElementById("warning-details").hidden = false;
+                storageStatus.classList.toggle("warning", storage.status === "warning");
+                storageStatus.classList.toggle("critical", storage.status === "critical");
+                storageWarning.classList.toggle("critical", storage.status === "critical");
+                storageIndicator.hidden = storage.status === "normal";
+                storageState.hidden = storage.status === "normal";
+                storageState.textContent = storage.status === "critical" ? "Critical:" : "Low:";
                 storageWarning.hidden = !storage.is_low;
             } catch (error) {
                 storageWarning.hidden = false;
-                storageWarning.textContent = "Storage status unavailable.";
+                storageWarning.classList.add("critical");
+                document.getElementById("warning-label").textContent =
+                    "Storage status unavailable";
+                document.getElementById("warning-details").hidden = true;
             }
         }
 

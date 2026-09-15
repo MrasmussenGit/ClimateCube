@@ -40,14 +40,14 @@ except ImportError:
 app = Flask(__name__)
 
 
-def get_storage_warning_percent():
+def get_storage_threshold(environment_name, default):
     try:
         threshold = float(os.environ.get(
-            "CLIMATECUBE_STORAGE_WARNING_PERCENT",
-            "10"
+            environment_name,
+            str(default)
         ))
     except ValueError:
-        threshold = 10.0
+        threshold = default
 
     return min(100.0, max(0.0, threshold))
 
@@ -70,7 +70,20 @@ def get_storage_info():
     available_percent = (
         available_bytes / total_bytes * 100 if total_bytes else 0
     )
-    warning_percent = get_storage_warning_percent()
+    warning_percent = get_storage_threshold(
+        "CLIMATECUBE_STORAGE_WARNING_PERCENT",
+        10.0
+    )
+    critical_percent = min(
+        warning_percent,
+        get_storage_threshold("CLIMATECUBE_STORAGE_CRITICAL_PERCENT", 5.0)
+    )
+    if available_percent <= critical_percent:
+        status = "critical"
+    elif available_percent <= warning_percent:
+        status = "warning"
+    else:
+        status = "normal"
     database_bytes = database_path.stat().st_size if database_path.exists() else 0
 
     return {
@@ -82,7 +95,9 @@ def get_storage_info():
         "available_size": format_bytes(available_bytes),
         "available_percent": round(available_percent, 1),
         "warning_percent": warning_percent,
-        "is_low": available_percent < warning_percent
+        "critical_percent": critical_percent,
+        "status": status,
+        "is_low": status != "normal"
     }
 
 
