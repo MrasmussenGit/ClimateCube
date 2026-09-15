@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Indoor and Outdoor Temperature</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
+    <style>
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); }
+        body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
+        .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+        .header-actions, .controls, .series-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+        .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        .controls { margin: 24px 0 18px; }
+        .series-controls { gap: 18px; margin-bottom: 18px; }
+        .series-control { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
+        .series-control input { width: 18px; height: 18px; accent-color: var(--button); }
+        button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; cursor: pointer; }
+        button.active, #unit-button, #theme-button { background: var(--button); color: var(--page); }
+        .chart-card { height: 500px; padding: 22px; background: var(--surface); border-radius: 8px; box-shadow: 0 4px 14px var(--shadow); }
+        .details, .status { color: var(--muted); }
+        @media (max-width: 600px) {
+            body { padding: 18px; }
+            .header { align-items: flex-start; flex-direction: column; }
+            .chart-card { height: 380px; padding: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <a class="back-link" href="{{ url_for('dashboard') }}">← Current readings</a>
+    <div class="header">
+        <div>
+            <h1>Indoor and outdoor temperature</h1>
+            <p class="details">Compare room temperatures with local outdoor conditions.</p>
+            <p id="timezone-details" class="details"></p>
+        </div>
+        <div class="header-actions">
+            <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
+            <button id="unit-button" type="button">Show °F</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="range-button" data-range="6h">6 hours</button>
+        <button class="range-button active" data-range="24h">24 hours</button>
+        <button class="range-button" data-range="3d">3 days</button>
+        <button class="range-button" data-range="7d">7 days</button>
+    </div>
+    <div id="series-controls" class="series-controls"></div>
+
+    <div class="chart-card"><canvas id="comparison-chart"></canvas></div>
+    <p id="status" class="status">Loading temperature history...</p>
+
+    <script>
+        const palette = ["#d35400", "#2471a3", "#239b56", "#8e44ad", "#c0392b", "#117864", "#b7950b"];
+        const outdoorColor = "#566573";
+        const status = document.getElementById("status");
+        const seriesControls = document.getElementById("series-controls");
+        const themeButton = document.getElementById("theme-button");
+        const unitButton = document.getElementById("unit-button");
+        const rangeButtons = document.querySelectorAll(".range-button");
+        const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
+        let currentRange = "24h";
+        let comparisonData = null;
+
+        document.getElementById("timezone-details").textContent =
+            "Times shown in " + (timezoneName || "your local timezone");
+
+        function applyChartTheme() {
+            const styles = getComputedStyle(document.documentElement);
+            Chart.defaults.color = styles.getPropertyValue("--muted").trim();
+            Chart.defaults.borderColor = styles.getPropertyValue("--grid").trim();
+        }
+
+        function updateThemeButton() {
+            const dark = document.documentElement.dataset.theme === "dark";
+            themeButton.textContent = dark ? "Light mode" : "Dark mode";
+            themeButton.setAttribute("aria-pressed", String(dark));
+        }
+
+        function parseUtcTimestamp(timestamp) {
+            if (!timestamp) return null;
+            const normalized = timestamp.replace(" ", "T");
+            return new Date(/[zZ]$|[+-]\d\d:\d\d$/.test(normalized)
+                ? normalized : normalized + "Z");
+        }
+
+        function formatLocalTimestamp(timestamp) {
+            const date = parseUtcTimestamp(timestamp);
+            if (!date || Number.isNaN(date.getTime())) return timestamp;
+            return new Intl.DateTimeFormat(undefined, {
+                month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+            }).format(date);
+        }
+
+        function convertTemperature(celsius) {
+            if (celsius === null || celsius === undefined) return null;
+            const value = Number(celsius);
+            return temperatureUnit === "F" ? (value * 9 / 5) + 32 : value;
+        }
+
+        applyChartTheme();
+        const chart = new Chart(document.getElementById("comparison-chart"), {
+            type: "line",
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: "index" },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 10 } },
+                    temperature: {
+                        type: "linear",
+                        position: "left",
+                        title: { display: true, text: "Temperature (°C)" }
+                    }
+                }
+            }
+        });
+
+        function renderChart() {
+            const readings = comparisonData.readings;
+            const labels = Array.from(new Set(readings.map(function (reading) {
+                return reading.reading_time;
+            })));
+            const sensors = Array.from(new Map(readings.map(function (reading) {
+                return [reading.sensor_id, reading.sensor_name];
+            })).entries());
+
+            chart.data.labels = labels.map(formatLocalTimestamp);
+            chart.data.datasets = sensors.map(function (sensor, index) {
+                const values = new Map(readings
+                    .filter(function (reading) { return reading.sensor_id === sensor[0]; })
+                    .map(function (reading) { return [reading.reading_time, reading.temperature_c]; }));
+                return {
+                    label: sensor[1],
+                    data: labels.map(function (timestamp) { return convertTemperature(values.get(timestamp)); }),
+                    borderColor: palette[index % palette.length],
+                    backgroundColor: "transparent",
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.15,
+                    spanGaps: true,
+                    yAxisID: "temperature"
+                };
+            });
+
+            const outdoorValues = new Map(comparisonData.outdoor.map(function (reading) {
+                return [reading.reading_time, reading.outdoor_temperature_c];
+            }));
+            chart.data.datasets.push({
+                label: comparisonData.weather ? comparisonData.weather.location_name : "Outdoor",
+                data: labels.map(function (timestamp) { return convertTemperature(outdoorValues.get(timestamp)); }),
+                borderColor: outdoorColor,
+                backgroundColor: "transparent",
+                borderWidth: 3,
+                borderDash: [8, 5],
+                pointRadius: 0,
+                tension: 0.15,
+                spanGaps: true,
+                yAxisID: "temperature"
+            });
+
+            chart.options.scales.temperature.title.text = "Temperature (°" + temperatureUnit + ")";
+            unitButton.textContent = temperatureUnit === "F" ? "Show °C" : "Show °F";
+            renderSeriesControls();
+            chart.update();
+        }
+
+        function renderSeriesControls() {
+            seriesControls.replaceChildren();
+            chart.data.datasets.forEach(function (dataset, index) {
+                const label = document.createElement("label");
+                label.className = "series-control";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = !dataset.hidden;
+                checkbox.addEventListener("change", function () {
+                    chart.setDatasetVisibility(index, checkbox.checked);
+                    chart.update();
+                });
+                label.append(checkbox, document.createTextNode(dataset.label));
+                seriesControls.appendChild(label);
+            });
+        }
+
+        async function loadHistory() {
+            status.textContent = "Loading temperature history...";
+            try {
+                const response = await fetch("{{ url_for('temperature_comparison_api') }}?range=" + currentRange);
+                if (!response.ok) throw new Error("History request failed");
+                comparisonData = await response.json();
+                renderChart();
+                status.textContent = comparisonData.readings.length
+                    ? chart.data.labels.length + " time points across " + (chart.data.datasets.length - 1) + " indoor sensors"
+                    : "No indoor readings found for this period.";
+            } catch (error) {
+                status.textContent = "Unable to load temperature comparison.";
+            }
+        }
+
+        rangeButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                rangeButtons.forEach(function (item) { item.classList.remove("active"); });
+                button.classList.add("active");
+                currentRange = button.dataset.range;
+                loadHistory();
+            });
+        });
+
+        unitButton.addEventListener("click", function () {
+            temperatureUnit = temperatureUnit === "C" ? "F" : "C";
+            localStorage.setItem("temperatureUnit", temperatureUnit);
+            renderChart();
+        });
+
+        themeButton.addEventListener("click", function () {
+            document.documentElement.dataset.theme =
+                document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+            localStorage.setItem("theme", document.documentElement.dataset.theme);
+            applyChartTheme();
+            updateThemeButton();
+            chart.update();
+        });
+
+        updateThemeButton();
+        loadHistory();
+    </script>
+</body>
+</html>

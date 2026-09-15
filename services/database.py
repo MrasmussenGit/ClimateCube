@@ -299,6 +299,55 @@ def get_temperature_history(sensor_id, range_name):
     return [dict(row) for row in rows]
 
 
+def get_temperature_comparison(range_name):
+    modifier, bucket_seconds = HISTORY_RANGES[range_name]
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            WITH latest AS
+            (
+                SELECT MAX(COALESCE(r.pico_ts, r.insert_ts)) AS latest_ts
+                FROM sensor_reading AS r
+                JOIN sensor AS s ON s.sensor_id = r.sensor_id
+                WHERE s.active_flag = 1
+            ), bucketed AS
+            (
+                SELECT
+                    r.sensor_id,
+                    s.sensor_name,
+                    CAST(
+                        strftime(
+                            '%s',
+                            replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                        ) AS INTEGER
+                    ) / ? AS bucket,
+                    AVG(r.temperature_c) AS temperature_c
+                FROM sensor_reading AS r
+                JOIN sensor AS s ON s.sensor_id = r.sensor_id
+                CROSS JOIN latest
+                WHERE s.active_flag = 1
+                  AND datetime(
+                        replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                      ) >= datetime(
+                        replace(latest.latest_ts, 'T', ' '), ?
+                      )
+                GROUP BY r.sensor_id, s.sensor_name, bucket
+            )
+            SELECT
+                sensor_id,
+                sensor_name,
+                datetime(bucket * ?, 'unixepoch') AS reading_time,
+                temperature_c
+            FROM bucketed
+            ORDER BY reading_time, sensor_name
+            """,
+            (bucket_seconds, modifier, bucket_seconds)
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
 def add_outdoor_comparison(readings):
     if not readings:
         return readings

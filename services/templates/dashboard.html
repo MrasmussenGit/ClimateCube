@@ -214,6 +214,12 @@
         <p class="empty">No sensor readings found. Waiting for sensors…</p>
     {% endif %}
 
+    {% if readings %}
+        <a class="history-link" href="{{ url_for('temperature_comparison') }}">
+            Compare indoor and outdoor temperatures →
+        </a>
+    {% endif %}
+
     <div id="storage-status" class="storage-status{% if storage_info.status != 'normal' %} {{ storage_info.status }}{% endif %}" aria-label="Server storage">
         <span class="storage-item">Database size: <strong id="database-size">{{ storage_info.database_size }}</strong></span>
         <span class="storage-item">

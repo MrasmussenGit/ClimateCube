@@ -22,6 +22,7 @@ try:
         get_hidden_sensor_count,
         get_sensor,
         get_sensors,
+        get_temperature_comparison,
         get_temperature_history,
         get_weather_settings,
         update_sensor_name,
@@ -39,6 +40,7 @@ except ImportError:
         get_hidden_sensor_count,
         get_sensor,
         get_sensors,
+        get_temperature_comparison,
         get_temperature_history,
         get_weather_settings,
         update_sensor_name,
@@ -278,6 +280,37 @@ def history(sensor_id):
         "history.html",
         sensor=sensor
     )
+
+
+@app.route("/history")
+def temperature_comparison():
+    return render_template("comparison.html")
+
+
+@app.route("/api/history")
+def temperature_comparison_api():
+    range_name = request.args.get("range", "24h")
+
+    if range_name not in HISTORY_RANGES:
+        return jsonify({
+            "error": "Invalid range",
+            "valid_ranges": list(HISTORY_RANGES)
+        }), 400
+
+    readings = get_temperature_comparison(range_name)
+    timestamps = list(dict.fromkeys(
+        reading["reading_time"] for reading in readings
+    ))
+    outdoor = add_outdoor_comparison([
+        {"reading_time": timestamp} for timestamp in timestamps
+    ])
+
+    return jsonify({
+        "range": range_name,
+        "readings": readings,
+        "outdoor": outdoor,
+        "weather": get_latest_weather()
+    })
 
 
 @app.route("/api/history/<int:sensor_id>")
