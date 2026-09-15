@@ -23,9 +23,12 @@
         .sensor-card { padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
         .weather-settings { margin: 24px 0 36px; padding: 22px; background: var(--surface); border-radius: 8px; box-shadow: 0 4px 14px var(--shadow); }
         .weather-settings h2 { margin-top: 0; }
-        .weather-form { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; align-items: end; gap: 12px; }
+        .weather-form { display: grid; grid-template-columns: 1fr 1.4fr auto; align-items: end; gap: 12px; }
         .weather-field { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weight: bold; }
         .weather-field input { min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 16px; }
+        .advanced-location { margin-top: 18px; color: var(--muted); }
+        .advanced-location summary { cursor: pointer; font-weight: bold; }
+        .advanced-location .weather-form { grid-template-columns: 1.4fr 1fr 1fr auto; margin-top: 14px; }
         .sensor-card.inactive { opacity: 0.72; border: 2px dashed var(--border); }
         .sensor-card.external { border-left: 5px solid var(--border); }
         .sensor-card h2 { margin-top: 0; margin-bottom: 8px; }
@@ -42,6 +45,7 @@
             body { padding: 18px; }
             .name-form { flex-direction: column; }
             .weather-form { grid-template-columns: 1fr; }
+            .advanced-location .weather-form { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -69,25 +73,46 @@
 
         <section class="weather-settings">
             <h2>Outdoor weather</h2>
-            <p class="subtitle">Use approximate coordinates for local outdoor conditions from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.</p>
+            <p class="subtitle">Enter a US ZIP code for local outdoor conditions from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.</p>
             <form class="weather-form" method="post" action="{{ url_for('save_weather_settings') }}">
+                <input type="hidden" name="location_method" value="zip">
                 <label class="weather-field">
-                    Display name
-                    <input type="text" name="location_name" maxlength="50" required
-                           value="{{ weather_settings.location_name }}">
+                    US ZIP code
+                    <input type="text" name="zip_code" inputmode="numeric" pattern="[0-9]{5}"
+                           maxlength="5" required value="{{ weather_settings.zip_code }}"
+                           placeholder="14624" autocomplete="postal-code">
                 </label>
                 <label class="weather-field">
-                    Latitude
-                    <input type="number" name="latitude" min="-90" max="90" step="any" required
-                           value="{{ weather_settings.latitude }}" placeholder="40.7128">
+                    Card name (optional)
+                    <input type="text" name="location_name" maxlength="50"
+                           value="{% if weather_settings.latitude %}{{ weather_settings.location_name }}{% endif %}"
+                           placeholder="Uses city and state">
                 </label>
-                <label class="weather-field">
-                    Longitude
-                    <input type="number" name="longitude" min="-180" max="180" step="any" required
-                           value="{{ weather_settings.longitude }}" placeholder="-74.0060">
-                </label>
-                <button type="submit">Save location</button>
+                <button type="submit">Use ZIP code</button>
             </form>
+
+            <details class="advanced-location"{% if weather_settings.latitude and not weather_settings.zip_code %} open{% endif %}>
+                <summary>Advanced: enter coordinates manually</summary>
+                <form class="weather-form" method="post" action="{{ url_for('save_weather_settings') }}">
+                    <input type="hidden" name="location_method" value="coordinates">
+                    <label class="weather-field">
+                        Card name
+                        <input type="text" name="location_name" maxlength="50" required
+                               value="{{ weather_settings.location_name }}">
+                    </label>
+                    <label class="weather-field">
+                        Latitude
+                        <input type="number" name="latitude" min="-90" max="90" step="any" required
+                               value="{{ weather_settings.latitude }}" placeholder="43.1611">
+                    </label>
+                    <label class="weather-field">
+                        Longitude
+                        <input type="number" name="longitude" min="-180" max="180" step="any" required
+                               value="{{ weather_settings.longitude }}" placeholder="-77.6189">
+                    </label>
+                    <button type="submit">Use coordinates</button>
+                </form>
+            </details>
         </section>
 
         {% if sensors or weather_settings.latitude %}
@@ -100,7 +125,12 @@
                         </div>
                         <div class="sensor-details">
                             Provider: Open-Meteo<br>
-                            Location: {{ weather_settings.latitude }}, {{ weather_settings.longitude }}
+                            Location:
+                            {% if weather_settings.zip_code %}
+                                {{ weather_settings.place_name }}, {{ weather_settings.state }} {{ weather_settings.zip_code }}
+                            {% else %}
+                                {{ weather_settings.latitude }}, {{ weather_settings.longitude }}
+                            {% endif %}
                         </div>
                         <p class="external-note">Managed by the outdoor weather settings above. Device, IP address, hardware, and dashboard visibility do not apply.</p>
                     </section>

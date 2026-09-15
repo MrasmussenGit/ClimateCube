@@ -12,6 +12,7 @@ from flask import (
 )
 
 try:
+    from .geocoding import ZipLookupError, lookup_us_zip
     from .database import (
         DB_FILE,
         HISTORY_RANGES,
@@ -28,6 +29,7 @@ try:
         update_weather_settings
     )
 except ImportError:
+    from geocoding import ZipLookupError, lookup_us_zip
     from database import (
         DB_FILE,
         HISTORY_RANGES,
@@ -174,14 +176,36 @@ def settings():
 
 @app.route("/settings/weather", methods=["POST"])
 def save_weather_settings():
-    try:
-        latitude = float(request.form.get("latitude", ""))
-        longitude = float(request.form.get("longitude", ""))
-    except ValueError:
-        return redirect(url_for(
-            "settings",
-            error="Weather latitude and longitude must be numbers."
-        ))
+    location_method = request.form.get("location_method", "zip")
+    zip_code = ""
+    place_name = ""
+    state = ""
+
+    if location_method == "zip":
+        try:
+            location = lookup_us_zip(request.form.get("zip_code", ""))
+        except ZipLookupError as error:
+            return redirect(url_for("settings", error=str(error)))
+
+        latitude = location["latitude"]
+        longitude = location["longitude"]
+        zip_code = location["zip_code"]
+        place_name = location["place_name"]
+        state = location["state"]
+        default_name = f"{place_name}, {location['state_abbreviation']}"
+    elif location_method == "coordinates":
+        default_name = "Outdoor Weather"
+
+        try:
+            latitude = float(request.form.get("latitude", ""))
+            longitude = float(request.form.get("longitude", ""))
+        except ValueError:
+            return redirect(url_for(
+                "settings",
+                error="Weather latitude and longitude must be numbers."
+            ))
+    else:
+        return redirect(url_for("settings", error="Invalid location method."))
 
     if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
         return redirect(url_for(
@@ -191,8 +215,8 @@ def save_weather_settings():
 
     location_name = request.form.get(
         "location_name",
-        "Outdoor Weather"
-    ).strip()
+        ""
+    ).strip() or default_name
 
     if not location_name or len(location_name) > 50:
         return redirect(url_for(
@@ -200,7 +224,14 @@ def save_weather_settings():
             error="Weather location name must be 1 to 50 characters."
         ))
 
-    update_weather_settings(latitude, longitude, location_name)
+    update_weather_settings(
+        latitude,
+        longitude,
+        location_name,
+        zip_code=zip_code,
+        place_name=place_name,
+        state=state
+    )
     return redirect(url_for("settings", weather_saved="1"))
 
 

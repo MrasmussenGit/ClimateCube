@@ -70,6 +70,9 @@ def get_weather_settings():
     return {
         "latitude": settings.get("weather_latitude", ""),
         "longitude": settings.get("weather_longitude", ""),
+        "zip_code": settings.get("weather_zip_code", ""),
+        "place_name": settings.get("weather_place_name", ""),
+        "state": settings.get("weather_state", ""),
         "location_name": settings.get(
             "weather_location_name",
             "Outdoor Weather"
@@ -77,12 +80,22 @@ def get_weather_settings():
     }
 
 
-def update_weather_settings(latitude, longitude, location_name):
+def update_weather_settings(
+    latitude,
+    longitude,
+    location_name,
+    zip_code="",
+    place_name="",
+    state=""
+):
     ensure_weather_schema()
     values = {
         "weather_latitude": str(latitude),
         "weather_longitude": str(longitude),
-        "weather_location_name": location_name
+        "weather_location_name": location_name,
+        "weather_zip_code": zip_code,
+        "weather_place_name": place_name,
+        "weather_state": state
     }
 
     with get_connection() as conn:

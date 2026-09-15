@@ -21,8 +21,9 @@ red; configure that threshold with `CLIMATECUBE_STORAGE_CRITICAL_PERCENT`.
 
 ClimateCube collects outdoor conditions from Open-Meteo every 15 minutes and
 stores each observation locally for indoor/outdoor history comparisons. Open
-the dashboard Settings page and enter an approximate latitude, longitude, and
-display name. Exact street-level coordinates are not required.
+the dashboard Settings page and enter a 5-digit US ZIP code. ClimateCube uses
+Zippopotam to resolve the ZIP code to approximate coordinates; manual latitude
+and longitude remain available under Advanced settings.
 
 Open-Meteo does not require an account or API key for non-commercial use within
 its published usage limits. Review its current licence and pricing before using
