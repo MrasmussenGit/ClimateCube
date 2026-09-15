@@ -213,6 +213,7 @@ def main():
                     flush=True
                 )
                 waiting_for_location = True
+            if not collected:
                 sleep_seconds = 60
             elif collected:
                 waiting_for_location = False

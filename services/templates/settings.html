@@ -27,9 +27,11 @@
         .weather-field { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weight: bold; }
         .weather-field input { min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 16px; }
         .sensor-card.inactive { opacity: 0.72; border: 2px dashed var(--border); }
+        .sensor-card.external { border-left: 5px solid var(--border); }
         .sensor-card h2 { margin-top: 0; margin-bottom: 8px; }
         .sensor-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .visibility-status { margin: 0; color: var(--muted); font-size: 13px; font-weight: bold; }
+        .external-note { margin: 18px 0 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--page); }
         .name-form { display: flex; gap: 10px; margin-top: 18px; }
         .visibility-form { margin-top: 12px; }
         .visibility-form button { background: var(--border); color: var(--text); }
@@ -88,8 +90,21 @@
             </form>
         </section>
 
-        {% if sensors %}
+        {% if sensors or weather_settings.latitude %}
             <div class="sensor-list">
+                {% if weather_settings.latitude %}
+                    <section class="sensor-card external">
+                        <div class="sensor-card-header">
+                            <h2>{{ weather_settings.location_name }}</h2>
+                            <p class="visibility-status">External weather source</p>
+                        </div>
+                        <div class="sensor-details">
+                            Provider: Open-Meteo<br>
+                            Location: {{ weather_settings.latitude }}, {{ weather_settings.longitude }}
+                        </div>
+                        <p class="external-note">Managed by the outdoor weather settings above. Device, IP address, hardware, and dashboard visibility do not apply.</p>
+                    </section>
+                {% endif %}
                 {% for sensor in sensors %}
                     <section class="sensor-card{% if not sensor.active_flag %} inactive{% endif %}">
                         <div class="sensor-card-header">

@@ -19,15 +19,10 @@
         .button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--button); color: var(--page); font-size: 16px; cursor: pointer; text-decoration: none; }
         .button:hover { background: var(--button-hover); }
         .sensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 30px; }
-        .outdoor-weather { display: grid; grid-template-columns: minmax(220px, 1.1fr) repeat(4, minmax(120px, 0.7fr)); align-items: center; gap: 18px; margin-top: 24px; padding: 18px 22px; background: var(--surface); border-left: 5px solid #2471a3; border-radius: 8px; box-shadow: 0 4px 14px var(--shadow); }
-        .outdoor-title h2 { margin: 0 0 5px; font-size: 20px; }
-        .outdoor-title p { margin: 0; color: var(--muted); font-size: 13px; }
-        .outdoor-title a { color: inherit; }
-        .outdoor-value { display: grid; gap: 3px; }
-        .outdoor-value strong { font-size: 20px; }
-        .outdoor-value span { color: var(--muted); font-size: 12px; }
         .weather-setup { margin-top: 24px; color: var(--muted); }
         .sensor { padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .outdoor-sensor { border-top: 4px solid #2471a3; }
+        .outdoor-sensor .temperature { color: #2471a3; }
         .sensor.hidden-sensor { opacity: 0.72; border: 2px dashed var(--border); }
         .sensor-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .sensor h2 { margin-top: 0; }
@@ -49,8 +44,12 @@
         .communication-status.overdue::before { background: #d92d20; }
         .communication-status.unknown { color: var(--muted); }
         .communication-status.unknown::before { background: #98a2b3; }
+        .source-status { margin-top: 9px; color: #287a4d; font-size: 13px; font-weight: bold; }
+        .source-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: #2e9d62; }
         .history-link { display: inline-block; margin-top: 18px; color: var(--text); font-weight: bold; text-decoration: none; }
         .history-link:hover { text-decoration: underline; }
+        .source-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        .source-link:hover { text-decoration: underline; }
         .storage-warning { margin-top: 24px; padding: 14px 16px; border: 1px solid var(--warning-border); border-left-width: 5px; border-radius: 6px; background: var(--warning-bg); color: var(--warning-text); font-weight: bold; }
         .storage-warning.critical { border-color: var(--critical-border); background: var(--critical-bg); color: var(--critical-text); }
         .storage-warning[hidden] { display: none; }
@@ -66,8 +65,6 @@
         @media (max-width: 600px) {
             body { padding: 18px; }
             .header { align-items: flex-start; flex-direction: column; }
-            .outdoor-weather { grid-template-columns: 1fr 1fr; }
-            .outdoor-title { grid-column: 1 / -1; }
         }
     </style>
 </head>
@@ -101,38 +98,54 @@
         </span>
     </div>
 
-    {% if weather %}
-        <section id="outdoor-weather" class="outdoor-weather">
-            <div class="outdoor-title">
-                <h2 id="weather-location">{{ weather.location_name }}</h2>
-                <p>Outdoor conditions · <span id="weather-time" class="local-time" data-utc-time="{{ weather.observed_ts }}">{{ weather.observed_ts }} UTC</span></p>
-                <p>Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></p>
-            </div>
-            <div class="outdoor-value">
-                <strong id="weather-temperature" data-temperature-c="{{ weather.temperature_c }}">{{ "%.1f"|format(weather.temperature_c) }} °C</strong>
-                <span>Temperature</span>
-            </div>
-            <div class="outdoor-value">
-                <strong id="weather-humidity">{{ "%.0f"|format(weather.humidity_pct) }}%</strong>
-                <span>Humidity</span>
-            </div>
-            <div class="outdoor-value">
-                <strong id="weather-dew-point" data-temperature-c="{{ weather.dew_point_c }}">{% if weather.dew_point_c is not none %}{{ "%.1f"|format(weather.dew_point_c) }} °C{% else %}--{% endif %}</strong>
-                <span>Dew point</span>
-            </div>
-            <div class="outdoor-value">
-                <strong id="weather-wind">{% if weather.wind_speed_kmh is not none %}{{ "%.1f"|format(weather.wind_speed_kmh) }} km/h{% else %}--{% endif %}</strong>
-                <span>Wind</span>
-            </div>
-        </section>
-    {% elif weather_settings.latitude and weather_settings.longitude %}
+    {% if not weather and weather_settings.latitude and weather_settings.longitude %}
         <p class="weather-setup">Outdoor weather is configured and waiting for its first observation.</p>
-    {% else %}
+    {% elif not weather %}
         <p class="weather-setup"><a class="history-link" href="{{ url_for('settings') }}">Set an outdoor weather location</a> to compare rooms with outside conditions.</p>
     {% endif %}
 
-    {% if readings %}
+    {% if readings or weather %}
         <div class="sensors">
+            {% if weather %}
+                <section id="outdoor-weather" class="sensor outdoor-sensor">
+                    <div class="sensor-heading">
+                        <h2 id="weather-location">{{ weather.location_name }}</h2>
+                        <span class="hidden-badge">External</span>
+                    </div>
+                    <div id="weather-temperature" class="temperature" data-temperature-c="{{ weather.temperature_c }}">
+                        {{ "%.2f"|format(weather.temperature_c) }} °C
+                    </div>
+                    <div class="reading">
+                        <span class="label">Humidity</span>
+                        <span id="weather-humidity">{{ "%.0f"|format(weather.humidity_pct) }} %</span>
+                    </div>
+                    <div class="reading">
+                        <span class="label">Dew point</span>
+                        <span id="weather-dew-point" data-temperature-c="{{ weather.dew_point_c }}">{% if weather.dew_point_c is not none %}{{ "%.1f"|format(weather.dew_point_c) }} °C{% else %}--{% endif %}</span>
+                    </div>
+                    <div class="reading">
+                        <span class="label">Pressure</span>
+                        <span id="weather-pressure">{% if weather.pressure_hpa is not none %}{{ "%.1f"|format(weather.pressure_hpa) }} hPa{% else %}--{% endif %}</span>
+                    </div>
+                    <div class="reading">
+                        <span class="label">Wind</span>
+                        <span id="weather-wind">{% if weather.wind_speed_kmh is not none %}{{ "%.1f"|format(weather.wind_speed_kmh) }} km/h{% else %}--{% endif %}</span>
+                    </div>
+                    <div class="reading">
+                        <span class="label">Cloud cover</span>
+                        <span id="weather-clouds">{% if weather.cloud_cover_pct is not none %}{{ "%.0f"|format(weather.cloud_cover_pct) }} %{% else %}--{% endif %}</span>
+                    </div>
+                    <div class="reading">
+                        <span class="label">Source</span>
+                        <span><a class="source-link" href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></span>
+                    </div>
+                    <div class="timestamp">
+                        Observation time:
+                        <span id="weather-time" class="local-time" data-utc-time="{{ weather.observed_ts }}">{{ weather.observed_ts }} UTC</span>
+                    </div>
+                    <div class="source-status">Updates every 15 minutes</div>
+                </section>
+            {% endif %}
             {% for reading in readings %}
                 <section class="sensor{% if not reading.active_flag %} hidden-sensor{% endif %}" data-sensor-id="{{ reading.sensor_id }}">
                     <div class="sensor-heading">
@@ -281,7 +294,7 @@
             });
             unitButton.textContent = temperatureUnit === "C" ? "Show °F" : "Show °C";
 
-            document.querySelectorAll("#weather-temperature, #weather-dew-point").forEach(function (element) {
+            document.querySelectorAll("#weather-dew-point").forEach(function (element) {
                 const celsius = Number(element.dataset.temperatureC);
                 if (!Number.isFinite(celsius)) return;
                 const value = temperatureUnit === "F" ? (celsius * 9 / 5) + 32 : celsius;
@@ -435,7 +448,9 @@
                 if (!response.ok) throw new Error("Latest readings request failed");
 
                 const readings = await response.json();
-                const displayedIds = Array.from(document.querySelectorAll(".sensor"))
+                const displayedIds = Array.from(
+                    document.querySelectorAll(".sensor[data-sensor-id]")
+                )
                     .map(function (card) { return Number(card.dataset.sensorId); })
                     .sort(function (a, b) { return a - b; });
                 const receivedIds = readings
@@ -507,11 +522,18 @@
 
                 document.getElementById("weather-location").textContent = weather.location_name;
                 document.getElementById("weather-humidity").textContent =
-                    Number(weather.humidity_pct).toFixed(0) + "%";
+                    Number(weather.humidity_pct).toFixed(0) + " %";
                 document.getElementById("weather-wind").textContent = weather.wind_speed_kmh === null
                     ? "--" : Number(weather.wind_speed_kmh).toFixed(1) + " km/h";
+                document.getElementById("weather-pressure").textContent = weather.pressure_hpa === null
+                    ? "--" : Number(weather.pressure_hpa).toFixed(1) + " hPa";
+                document.getElementById("weather-clouds").textContent = weather.cloud_cover_pct === null
+                    ? "--" : Number(weather.cloud_cover_pct).toFixed(0) + " %";
                 document.getElementById("weather-temperature").dataset.temperatureC = weather.temperature_c;
-                document.getElementById("weather-dew-point").dataset.temperatureC = weather.dew_point_c;
+                const dewPoint = document.getElementById("weather-dew-point");
+                dewPoint.dataset.temperatureC = weather.dew_point_c === null
+                    ? "" : weather.dew_point_c;
+                if (weather.dew_point_c === null) dewPoint.textContent = "--";
                 const weatherTime = document.getElementById("weather-time");
                 weatherTime.dataset.utcTime = weather.observed_ts;
                 displayTemperatures();
