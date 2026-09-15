@@ -21,6 +21,11 @@
         .error { background: #f9dddd; color: #8a2727; }
         .sensor-list { display: grid; gap: 16px; margin-top: 24px; }
         .sensor-card { padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .weather-settings { margin: 24px 0 36px; padding: 22px; background: var(--surface); border-radius: 8px; box-shadow: 0 4px 14px var(--shadow); }
+        .weather-settings h2 { margin-top: 0; }
+        .weather-form { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; align-items: end; gap: 12px; }
+        .weather-field { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weight: bold; }
+        .weather-field input { min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 16px; }
         .sensor-card.inactive { opacity: 0.72; border: 2px dashed var(--border); }
         .sensor-card h2 { margin-top: 0; margin-bottom: 8px; }
         .sensor-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -34,6 +39,7 @@
         @media (max-width: 600px) {
             body { padding: 18px; }
             .name-form { flex-direction: column; }
+            .weather-form { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -52,9 +58,35 @@
         {% if visibility_saved %}
             <p class="notice success">Dashboard visibility updated.</p>
         {% endif %}
+        {% if weather_saved %}
+            <p class="notice success">Outdoor weather location updated. Collection will begin shortly.</p>
+        {% endif %}
         {% if error %}
             <p class="notice error">{{ error }}</p>
         {% endif %}
+
+        <section class="weather-settings">
+            <h2>Outdoor weather</h2>
+            <p class="subtitle">Use approximate coordinates for local outdoor conditions from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.</p>
+            <form class="weather-form" method="post" action="{{ url_for('save_weather_settings') }}">
+                <label class="weather-field">
+                    Display name
+                    <input type="text" name="location_name" maxlength="50" required
+                           value="{{ weather_settings.location_name }}">
+                </label>
+                <label class="weather-field">
+                    Latitude
+                    <input type="number" name="latitude" min="-90" max="90" step="any" required
+                           value="{{ weather_settings.latitude }}" placeholder="40.7128">
+                </label>
+                <label class="weather-field">
+                    Longitude
+                    <input type="number" name="longitude" min="-180" max="180" step="any" required
+                           value="{{ weather_settings.longitude }}" placeholder="-74.0060">
+                </label>
+                <button type="submit">Save location</button>
+            </form>
+        </section>
 
         {% if sensors %}
             <div class="sensor-list">

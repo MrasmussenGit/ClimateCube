@@ -214,10 +214,45 @@ sudo systemctl is-active --quiet climatecube-web || {
 echo "Web server running on port 5000"
 
 echo
+echo "Configuring ClimateCube weather collector..."
+
+sudo tee /etc/systemd/system/climatecube-weather.service > /dev/null <<EOF
+[Unit]
+Description=ClimateCube Outdoor Weather Collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SERVICE_USER
+WorkingDirectory=$PROJECT_DIR
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$PROJECT_DIR/.venv/bin/python services/weather_collector.py
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable climatecube-weather
+sudo systemctl restart climatecube-weather
+
+echo
+echo "ClimateCube Weather Collector:"
+sudo systemctl is-active --quiet climatecube-weather || {
+    echo "ERROR: ClimateCube weather collector failed to start"
+    sudo systemctl status climatecube-weather --no-pager
+    exit 1
+}
+
+echo
 echo "Service Status:"
 echo "Mosquitto:     $(systemctl is-active mosquitto)"
 echo "MQTT Listener: $(systemctl is-active climatecube-listener)"
 echo "Web Server:    $(systemctl is-active climatecube-web)"
+echo "Weather:       $(systemctl is-active climatecube-weather)"
 
 echo
 echo "===================================="

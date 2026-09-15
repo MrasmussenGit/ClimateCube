@@ -19,6 +19,14 @@
         .button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--button); color: var(--page); font-size: 16px; cursor: pointer; text-decoration: none; }
         .button:hover { background: var(--button-hover); }
         .sensors { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 30px; }
+        .outdoor-weather { display: grid; grid-template-columns: minmax(220px, 1.1fr) repeat(4, minmax(120px, 0.7fr)); align-items: center; gap: 18px; margin-top: 24px; padding: 18px 22px; background: var(--surface); border-left: 5px solid #2471a3; border-radius: 8px; box-shadow: 0 4px 14px var(--shadow); }
+        .outdoor-title h2 { margin: 0 0 5px; font-size: 20px; }
+        .outdoor-title p { margin: 0; color: var(--muted); font-size: 13px; }
+        .outdoor-title a { color: inherit; }
+        .outdoor-value { display: grid; gap: 3px; }
+        .outdoor-value strong { font-size: 20px; }
+        .outdoor-value span { color: var(--muted); font-size: 12px; }
+        .weather-setup { margin-top: 24px; color: var(--muted); }
         .sensor { padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
         .sensor.hidden-sensor { opacity: 0.72; border: 2px dashed var(--border); }
         .sensor-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -58,6 +66,8 @@
         @media (max-width: 600px) {
             body { padding: 18px; }
             .header { align-items: flex-start; flex-direction: column; }
+            .outdoor-weather { grid-template-columns: 1fr 1fr; }
+            .outdoor-title { grid-column: 1 / -1; }
         }
     </style>
 </head>
@@ -90,6 +100,36 @@
             available (<span id="warning-percent">{{ storage_info.available_percent }}</span>%).
         </span>
     </div>
+
+    {% if weather %}
+        <section id="outdoor-weather" class="outdoor-weather">
+            <div class="outdoor-title">
+                <h2 id="weather-location">{{ weather.location_name }}</h2>
+                <p>Outdoor conditions · <span id="weather-time" class="local-time" data-utc-time="{{ weather.observed_ts }}">{{ weather.observed_ts }} UTC</span></p>
+                <p>Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></p>
+            </div>
+            <div class="outdoor-value">
+                <strong id="weather-temperature" data-temperature-c="{{ weather.temperature_c }}">{{ "%.1f"|format(weather.temperature_c) }} °C</strong>
+                <span>Temperature</span>
+            </div>
+            <div class="outdoor-value">
+                <strong id="weather-humidity">{{ "%.0f"|format(weather.humidity_pct) }}%</strong>
+                <span>Humidity</span>
+            </div>
+            <div class="outdoor-value">
+                <strong id="weather-dew-point" data-temperature-c="{{ weather.dew_point_c }}">{% if weather.dew_point_c is not none %}{{ "%.1f"|format(weather.dew_point_c) }} °C{% else %}--{% endif %}</strong>
+                <span>Dew point</span>
+            </div>
+            <div class="outdoor-value">
+                <strong id="weather-wind">{% if weather.wind_speed_kmh is not none %}{{ "%.1f"|format(weather.wind_speed_kmh) }} km/h{% else %}--{% endif %}</strong>
+                <span>Wind</span>
+            </div>
+        </section>
+    {% elif weather_settings.latitude and weather_settings.longitude %}
+        <p class="weather-setup">Outdoor weather is configured and waiting for its first observation.</p>
+    {% else %}
+        <p class="weather-setup"><a class="history-link" href="{{ url_for('settings') }}">Set an outdoor weather location</a> to compare rooms with outside conditions.</p>
+    {% endif %}
 
     {% if readings %}
         <div class="sensors">
@@ -240,6 +280,13 @@
                 element.textContent = value.toFixed(2) + " °" + temperatureUnit;
             });
             unitButton.textContent = temperatureUnit === "C" ? "Show °F" : "Show °C";
+
+            document.querySelectorAll("#weather-temperature, #weather-dew-point").forEach(function (element) {
+                const celsius = Number(element.dataset.temperatureC);
+                if (!Number.isFinite(celsius)) return;
+                const value = temperatureUnit === "F" ? (celsius * 9 / 5) + 32 : celsius;
+                element.textContent = value.toFixed(1) + " °" + temperatureUnit;
+            });
         }
 
         function formatGasResistance(ohms) {
@@ -448,6 +495,32 @@
             }
         }
 
+        async function refreshWeather() {
+            const panel = document.getElementById("outdoor-weather");
+            if (!panel) return;
+
+            try {
+                const response = await fetch("/api/weather", { cache: "no-store" });
+                if (!response.ok) throw new Error("Weather request failed");
+                const weather = await response.json();
+                if (!weather) return;
+
+                document.getElementById("weather-location").textContent = weather.location_name;
+                document.getElementById("weather-humidity").textContent =
+                    Number(weather.humidity_pct).toFixed(0) + "%";
+                document.getElementById("weather-wind").textContent = weather.wind_speed_kmh === null
+                    ? "--" : Number(weather.wind_speed_kmh).toFixed(1) + " km/h";
+                document.getElementById("weather-temperature").dataset.temperatureC = weather.temperature_c;
+                document.getElementById("weather-dew-point").dataset.temperatureC = weather.dew_point_c;
+                const weatherTime = document.getElementById("weather-time");
+                weatherTime.dataset.utcTime = weather.observed_ts;
+                displayTemperatures();
+                displayLocalTimes();
+            } catch (error) {
+                // Keep the last successfully collected observation visible.
+            }
+        }
+
         unitButton.addEventListener("click", function () {
             temperatureUnit = temperatureUnit === "C" ? "F" : "C";
             localStorage.setItem("temperatureUnit", temperatureUnit);
@@ -460,9 +533,11 @@
         updateCommunicationStatuses();
         refreshReadings();
         refreshStorage();
+        refreshWeather();
         setInterval(updateCommunicationStatuses, 1000);
         setInterval(refreshReadings, pollIntervalMilliseconds);
         setInterval(refreshStorage, pollIntervalMilliseconds);
+        setInterval(refreshWeather, pollIntervalMilliseconds);
     </script>
 </body>
 </html>

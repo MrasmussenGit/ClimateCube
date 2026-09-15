@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 
@@ -18,6 +19,103 @@ def get_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def ensure_weather_schema():
+    with get_connection() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS weather_observation (
+                observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_ts DATETIME NOT NULL,
+                insert_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                provider TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                temperature_c REAL NOT NULL,
+                humidity_pct REAL NOT NULL,
+                dew_point_c REAL,
+                pressure_hpa REAL,
+                precipitation_mm REAL,
+                wind_speed_kmh REAL,
+                cloud_cover_pct REAL,
+                weather_code INTEGER,
+                UNIQUE(provider, observed_ts, latitude, longitude)
+            );
+            CREATE INDEX IF NOT EXISTS idx_weather_observation_time
+            ON weather_observation(observed_ts);
+            CREATE TABLE IF NOT EXISTS app_setting (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL
+            );
+            """
+        )
+
+
+def get_weather_settings():
+    ensure_weather_schema()
+
+    with get_connection() as conn:
+        settings = {
+            row["setting_key"]: row["setting_value"]
+            for row in conn.execute(
+                """
+                SELECT setting_key, setting_value
+                FROM app_setting
+                WHERE setting_key LIKE 'weather_%'
+                """
+            )
+        }
+
+    return {
+        "latitude": settings.get("weather_latitude", ""),
+        "longitude": settings.get("weather_longitude", ""),
+        "location_name": settings.get(
+            "weather_location_name",
+            "Outdoor Weather"
+        )
+    }
+
+
+def update_weather_settings(latitude, longitude, location_name):
+    ensure_weather_schema()
+    values = {
+        "weather_latitude": str(latitude),
+        "weather_longitude": str(longitude),
+        "weather_location_name": location_name
+    }
+
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO app_setting (setting_key, setting_value)
+            VALUES (?, ?)
+            ON CONFLICT(setting_key)
+            DO UPDATE SET setting_value = excluded.setting_value
+            """,
+            values.items()
+        )
+
+
+def get_latest_weather():
+    ensure_weather_schema()
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM weather_observation
+            ORDER BY observed_ts DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    weather = dict(row)
+    weather["location_name"] = get_weather_settings()["location_name"]
+    return weather
 
 
 def get_latest_readings(include_inactive=False):
@@ -186,3 +284,51 @@ def get_temperature_history(sensor_id, range_name):
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+def add_outdoor_comparison(readings):
+    if not readings:
+        return readings
+
+    ensure_weather_schema()
+    reading_times = [
+        datetime.fromisoformat(reading["reading_time"].replace("T", " "))
+        for reading in readings
+    ]
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT observed_ts, temperature_c, humidity_pct, dew_point_c
+            FROM weather_observation
+            WHERE datetime(observed_ts) BETWEEN datetime(?, '-30 minutes')
+                                           AND datetime(?, '+30 minutes')
+            ORDER BY observed_ts
+            """,
+            (readings[0]["reading_time"], readings[-1]["reading_time"])
+        ).fetchall()
+
+    weather = [dict(row) for row in rows]
+
+    for reading, reading_time in zip(readings, reading_times):
+        nearest = min(
+            weather,
+            key=lambda item: abs(
+                datetime.fromisoformat(item["observed_ts"]) - reading_time
+            ),
+            default=None
+        )
+
+        if nearest is None or abs(
+            datetime.fromisoformat(nearest["observed_ts"]) - reading_time
+        ).total_seconds() > 1800:
+            reading["outdoor_temperature_c"] = None
+            reading["outdoor_humidity_pct"] = None
+            reading["outdoor_dew_point_c"] = None
+            continue
+
+        reading["outdoor_temperature_c"] = nearest["temperature_c"]
+        reading["outdoor_humidity_pct"] = nearest["humidity_pct"]
+        reading["outdoor_dew_point_c"] = nearest["dew_point_c"]
+
+    return readings

@@ -15,25 +15,33 @@ try:
     from .database import (
         DB_FILE,
         HISTORY_RANGES,
+        add_outdoor_comparison,
         get_latest_readings,
+        get_latest_weather,
         get_hidden_sensor_count,
         get_sensor,
         get_sensors,
         get_temperature_history,
+        get_weather_settings,
         update_sensor_name,
-        update_sensor_visibility
+        update_sensor_visibility,
+        update_weather_settings
     )
 except ImportError:
     from database import (
         DB_FILE,
         HISTORY_RANGES,
+        add_outdoor_comparison,
         get_latest_readings,
+        get_latest_weather,
         get_hidden_sensor_count,
         get_sensor,
         get_sensors,
         get_temperature_history,
+        get_weather_settings,
         update_sensor_name,
-        update_sensor_visibility
+        update_sensor_visibility,
+        update_weather_settings
     )
 
 
@@ -129,7 +137,9 @@ def dashboard():
         hidden_sensor_count=get_hidden_sensor_count(),
         show_hidden=show_hidden,
         server_info=get_server_info(),
-        storage_info=get_storage_info()
+        storage_info=get_storage_info(),
+        weather=get_latest_weather(),
+        weather_settings=get_weather_settings()
     )
 
 
@@ -137,6 +147,11 @@ def dashboard():
 def latest_api():
     show_hidden = request.args.get("show_hidden") == "1"
     return jsonify(get_latest_readings(include_inactive=show_hidden))
+
+
+@app.route("/api/weather")
+def weather_api():
+    return jsonify(get_latest_weather())
 
 
 @app.route("/api/storage")
@@ -149,10 +164,44 @@ def settings():
     return render_template(
         "settings.html",
         sensors=get_sensors(),
+        weather_settings=get_weather_settings(),
+        weather_saved=request.args.get("weather_saved") == "1",
         saved=request.args.get("saved") == "1",
         visibility_saved=request.args.get("visibility_saved") == "1",
         error=request.args.get("error")
     )
+
+
+@app.route("/settings/weather", methods=["POST"])
+def save_weather_settings():
+    try:
+        latitude = float(request.form.get("latitude", ""))
+        longitude = float(request.form.get("longitude", ""))
+    except ValueError:
+        return redirect(url_for(
+            "settings",
+            error="Weather latitude and longitude must be numbers."
+        ))
+
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        return redirect(url_for(
+            "settings",
+            error="Weather coordinates are outside the valid range."
+        ))
+
+    location_name = request.form.get(
+        "location_name",
+        "Outdoor Weather"
+    ).strip()
+
+    if not location_name or len(location_name) > 50:
+        return redirect(url_for(
+            "settings",
+            error="Weather location name must be 1 to 50 characters."
+        ))
+
+    update_weather_settings(latitude, longitude, location_name)
+    return redirect(url_for("settings", weather_saved="1"))
 
 
 @app.route("/settings/sensor/<int:sensor_id>/name", methods=["POST"])
@@ -215,10 +264,13 @@ def history_api(sensor_id):
             "valid_ranges": list(HISTORY_RANGES)
         }), 400
 
+    readings = get_temperature_history(sensor_id, range_name)
+
     return jsonify({
         "sensor": sensor,
         "range": range_name,
-        "readings": get_temperature_history(sensor_id, range_name)
+        "readings": add_outdoor_comparison(readings),
+        "weather": get_latest_weather()
     })
 
 

@@ -75,3 +75,33 @@ CREATE TABLE sensor_reading (
 
 CREATE INDEX idx_sensor_reading_sensor_time
 ON sensor_reading(sensor_id, pico_ts);
+
+-- ==========================================
+-- Outdoor Weather
+-- ==========================================
+
+CREATE TABLE weather_observation (
+    observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    observed_ts DATETIME NOT NULL,
+    insert_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    provider TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    temperature_c REAL NOT NULL,
+    humidity_pct REAL NOT NULL,
+    dew_point_c REAL,
+    pressure_hpa REAL,
+    precipitation_mm REAL,
+    wind_speed_kmh REAL,
+    cloud_cover_pct REAL,
+    weather_code INTEGER,
+    UNIQUE(provider, observed_ts, latitude, longitude)
+);
+
+CREATE INDEX idx_weather_observation_time
+ON weather_observation(observed_ts);
+
+CREATE TABLE app_setting (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL
+);

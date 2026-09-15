@@ -64,6 +64,18 @@
             <input type="checkbox" data-dataset="2">
             Pressure
         </label>
+        <label class="metric-control">
+            <input type="checkbox" data-dataset="3" checked>
+            Outdoor temperature
+        </label>
+        <label class="metric-control">
+            <input type="checkbox" data-dataset="4">
+            Outdoor humidity
+        </label>
+        <label class="metric-control">
+            <input type="checkbox" data-dataset="5">
+            Outdoor dew point
+        </label>
     </div>
 
     <div class="chart-card"><canvas id="temperature-chart"></canvas></div>
@@ -159,6 +171,35 @@
                     tension: 0.15,
                     hidden: true,
                     yAxisID: "pressure"
+                }, {
+                    label: "Outdoor temperature",
+                    data: [],
+                    borderColor: "#8e5a2b",
+                    borderWidth: 2,
+                    borderDash: [7, 5],
+                    pointRadius: 0,
+                    tension: 0.15,
+                    yAxisID: "temperature"
+                }, {
+                    label: "Outdoor humidity",
+                    data: [],
+                    borderColor: "#5b8db8",
+                    borderWidth: 2,
+                    borderDash: [7, 5],
+                    pointRadius: 0,
+                    tension: 0.15,
+                    hidden: true,
+                    yAxisID: "humidity"
+                }, {
+                    label: "Outdoor dew point",
+                    data: [],
+                    borderColor: "#7b6aa8",
+                    borderWidth: 2,
+                    borderDash: [3, 4],
+                    pointRadius: 0,
+                    tension: 0.15,
+                    hidden: true,
+                    yAxisID: "temperature"
                 }]
             },
             options: {
@@ -206,6 +247,20 @@
             });
             chart.data.datasets[2].data = historyReadings.map(function (reading) {
                 return Number(reading.pressure_hpa);
+            });
+            chart.data.datasets[3].data = historyReadings.map(function (reading) {
+                if (reading.outdoor_temperature_c === null) return null;
+                const celsius = Number(reading.outdoor_temperature_c);
+                return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
+            });
+            chart.data.datasets[4].data = historyReadings.map(function (reading) {
+                return reading.outdoor_humidity_pct === null
+                    ? null : Number(reading.outdoor_humidity_pct);
+            });
+            chart.data.datasets[5].data = historyReadings.map(function (reading) {
+                if (reading.outdoor_dew_point_c === null) return null;
+                const celsius = Number(reading.outdoor_dew_point_c);
+                return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
             });
             chart.options.scales.temperature.title.text =
                 "Temperature (°" + temperatureUnit + ")";

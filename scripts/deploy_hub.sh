@@ -23,8 +23,17 @@ echo "Restarting web server..."
 sudo systemctl restart climatecube-web
 sudo systemctl is-active --quiet climatecube-web
 
+if systemctl cat climatecube-weather > /dev/null 2>&1; then
+    echo "Restarting weather collector..."
+    sudo systemctl restart climatecube-weather
+    sudo systemctl is-active --quiet climatecube-weather
+else
+    echo "Weather collector is not installed; run ./scripts/setup.sh once to install it."
+fi
+
 echo
 echo "ClimateCube deployment complete."
 echo "Commit: $(git rev-parse --short HEAD)"
 echo "MQTT listener: $(systemctl is-active climatecube-listener)"
 echo "Web server:    $(systemctl is-active climatecube-web)"
+echo "Weather:       $(systemctl is-active climatecube-weather 2>/dev/null || echo not-installed)"

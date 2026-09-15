@@ -17,6 +17,24 @@ of the drive. Set `CLIMATECUBE_STORAGE_WARNING_PERCENT` in the web service
 environment to use a different percentage. At 5%, the indicator and alert turn
 red; configure that threshold with `CLIMATECUBE_STORAGE_CRITICAL_PERCENT`.
 
+## Configure Outdoor Weather
+
+ClimateCube collects outdoor conditions from Open-Meteo every 15 minutes and
+stores each observation locally for indoor/outdoor history comparisons. Open
+the dashboard Settings page and enter an approximate latitude, longitude, and
+display name. Exact street-level coordinates are not required.
+
+Open-Meteo does not require an account or API key for non-commercial use within
+its published usage limits. Review its current licence and pricing before using
+ClimateCube commercially.
+
+The collector runs as `climatecube-weather.service`. Existing hubs upgraded
+from an earlier ClimateCube release must run `./scripts/setup.sh` once to
+install that service. Useful checks are:
+
+	systemctl status climatecube-weather --no-pager
+	journalctl -u climatecube-weather --since today --no-pager
+
 ## Image a Pico W
 
 For a fresh board, first flash the current Raspberry Pi Pico W MicroPython UF2.
