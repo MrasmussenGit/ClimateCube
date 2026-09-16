@@ -187,7 +187,7 @@ $MPREMOTE "${CONNECT[@]}" cp "$CONFIG_FILE" :config.py
 echo
 echo "Verifying image..."
 $MPREMOTE "${CONNECT[@]}" exec \
-    "from umqtt.simple import MQTTClient; import config, sensor, display; print('Broker:', config.BROKER); print('Image verification passed')"
+    "from umqtt.simple import MQTTClient; import config, sensor_manager, display; print('Broker:', config.BROKER); print('Image verification passed')"
 
 echo
 echo "Restarting Pico W..."

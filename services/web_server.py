@@ -22,6 +22,7 @@ try:
         get_hidden_sensor_count,
         get_sensor,
         get_sensors,
+        get_additional_measurement_history,
         get_temperature_comparison,
         get_temperature_history,
         get_weather_settings,
@@ -40,6 +41,7 @@ except ImportError:
         get_hidden_sensor_count,
         get_sensor,
         get_sensors,
+        get_additional_measurement_history,
         get_temperature_comparison,
         get_temperature_history,
         get_weather_settings,
@@ -334,6 +336,7 @@ def history_api(sensor_id):
         "sensor": sensor,
         "range": range_name,
         "readings": add_outdoor_comparison(readings),
+        "measurements": get_additional_measurement_history(sensor_id, range_name),
         "weather": get_latest_weather()
     })
 

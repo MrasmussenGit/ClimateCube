@@ -44,6 +44,55 @@ def init():
 def get_sensor_type():
     return sensor_type
 
+
+def get_hardware():
+    return [sensor_type] if sensor_type else []
+
+
+def get_measurements(data):
+    measurements = [
+        {
+            "key": "temperature_c",
+            "label": "Temperature",
+            "value": data["temperature_c"],
+            "unit": "°C",
+            "precision": 2,
+            "format": "temperature",
+            "order": 10
+        },
+        {
+            "key": "humidity_pct",
+            "label": "Humidity",
+            "value": data["humidity_pct"],
+            "unit": "%",
+            "precision": 2,
+            "format": "number",
+            "order": 20
+        },
+        {
+            "key": "pressure_hpa",
+            "label": "Pressure",
+            "value": data["pressure_hpa"],
+            "unit": "hPa",
+            "precision": 2,
+            "format": "number",
+            "order": 30
+        }
+    ]
+
+    if data.get("gas_resistance_ohms") is not None:
+        measurements.append({
+            "key": "bme688_gas_resistance_ohms",
+            "label": "BME688 gas resistance",
+            "value": data["gas_resistance_ohms"],
+            "unit": "Ω",
+            "precision": 2,
+            "format": "resistance",
+            "order": 40
+        })
+
+    return measurements
+
 def GetTempData():
     global bme, sensor_type
 

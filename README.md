@@ -17,6 +17,24 @@ of the drive. Set `CLIMATECUBE_STORAGE_WARNING_PERCENT` in the web service
 environment to use a different percentage. At 5%, the indicator and alert turn
 red; configure that threshold with `CLIMATECUBE_STORAGE_CRITICAL_PERCENT`.
 
+## Supported Hardware
+
+ClimateCube currently supports these devices on the Pico W I2C bus:
+
+- BME280 temperature, humidity, and pressure sensor
+- BME688 temperature, humidity, pressure, and gas-resistance sensor
+- Pimoroni MICS6814 three-channel gas sensor at address `0x19` or `0x18`
+- SSD1306 OLED display at address `0x3C`
+
+MICS6814 readings are stored and displayed as resistance trends for reducing,
+oxidising, and NH3-sensitive channels. They are not displayed as ppm because
+reliable concentration values require controlled calibration. Allow the sensor
+heater time to stabilize before interpreting changes.
+
+New numeric sensor types use the generic measurement pipeline and do not need
+new database columns or dashboard markup. See `docs/SensorDrivers.md` for the
+driver contract.
+
 ## Configure Outdoor Weather
 
 ClimateCube collects outdoor conditions from Open-Meteo every 15 minutes and
@@ -45,8 +63,8 @@ Connect the Pico W by USB and run:
 	./scripts/image_pico.sh
 
 The imaging script verifies the board type, installs `umqtt.simple` and the
-BME680/BME688 sensor driver, copies all
-ClimateCube files without copying `__pycache__`, verifies the installation, and
+BME680/BME688 sensor driver, copies all ClimateCube files including the
+MICS6814 driver without copying `__pycache__`, verifies the installation, and
 restarts the Pico. It securely prompts for Wi-Fi settings, hides the
 password while it is entered, and removes its temporary configuration after
 imaging. The imaging computer finds the MQTT server at `climatecube.local` and

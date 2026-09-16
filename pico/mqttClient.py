@@ -49,7 +49,7 @@ def publish_reading(payload):
 
     client.publish(
         TOPIC,
-        json.dumps(payload),
+        json.dumps(payload).encode("utf-8"),
         qos=1
     )
 

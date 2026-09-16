@@ -155,21 +155,13 @@
                     <div class="temperature" data-temperature-c="{{ reading.temperature_c }}">
                         {{ "%.2f"|format(reading.temperature_c) }} °C
                     </div>
-                    <div class="reading">
-                        <span class="label">Humidity</span>
-                        <span class="humidity">{{ "%.2f"|format(reading.humidity_pct) }} %</span>
-                    </div>
-                    <div class="reading">
-                        <span class="label">Pressure</span>
-                        <span class="pressure">{{ "%.2f"|format(reading.pressure_hpa) }} hPa</span>
-                    </div>
-                    <div class="reading gas-reading"{% if reading.gas_resistance_ohms is none %} hidden{% endif %}>
-                        <span class="label">Gas resistance</span>
-                        <span class="gas-resistance" data-gas-ohms="{{ reading.gas_resistance_ohms or '' }}">
-                            {% if reading.gas_resistance_ohms is not none %}
-                                {{ "%.2f"|format(reading.gas_resistance_ohms / 1000000) }} MΩ
-                            {% endif %}
-                        </span>
+                    <div class="measurement-list">
+                        {% for measurement in reading.secondary_measurements %}
+                            <div class="reading" data-measurement-key="{{ measurement.key }}">
+                                <span class="label">{{ measurement.label }}</span>
+                                <span class="measurement-value">{{ measurement.display_value }}</span>
+                            </div>
+                        {% endfor %}
                     </div>
                     <div class="reading">
                         <span class="label">Device</span>
@@ -183,9 +175,9 @@
                         <span class="label">Hardware</span>
                         <span class="hardware-list">
                             {% if reading.hardware %}
-                                {% if reading.hardware.bme280 %}<span class="hardware-badge">BME280</span>{% endif %}
-                                {% if reading.hardware.bme688 %}<span class="hardware-badge"><span class="hardware-icon" aria-hidden="true">≋</span>BME688</span>{% endif %}
-                                {% if reading.hardware.oled %}<span class="hardware-badge">OLED</span>{% endif %}
+                                {% for hardware_name in reading.hardware %}
+                                    <span class="hardware-badge">{{ hardware_name }}</span>
+                                {% endfor %}
                             {% else %}
                                 <span class="hardware-unknown">Not reported yet</span>
                             {% endif %}
@@ -308,15 +300,6 @@
             });
         }
 
-        function formatGasResistance(ohms) {
-            const value = Number(ohms);
-
-            if (!Number.isFinite(value)) return "";
-            if (value >= 1000000) return (value / 1000000).toFixed(2) + " MΩ";
-            if (value >= 1000) return (value / 1000).toFixed(2) + " kΩ";
-            return value.toFixed(0) + " Ω";
-        }
-
         function formatDuration(totalSeconds) {
             const seconds = Math.max(0, Math.ceil(totalSeconds));
 
@@ -385,22 +368,24 @@
             if (!card) return;
 
             card.querySelector(".sensor-name").textContent = reading.sensor_name;
-            card.querySelector(".humidity").textContent =
-                Number(reading.humidity_pct).toFixed(2) + " %";
-            card.querySelector(".pressure").textContent =
-                Number(reading.pressure_hpa).toFixed(2) + " hPa";
+            const measurementList = card.querySelector(".measurement-list");
+            measurementList.replaceChildren();
+            reading.secondary_measurements.forEach(function (measurement) {
+                const row = document.createElement("div");
+                row.className = "reading";
+                row.dataset.measurementKey = measurement.key;
 
-            const gasReading = card.querySelector(".gas-reading");
-            const gasResistance = card.querySelector(".gas-resistance");
-            const hasGasReading = reading.gas_resistance_ohms !== null &&
-                reading.gas_resistance_ohms !== undefined;
-            gasReading.hidden = !hasGasReading;
-            gasResistance.dataset.gasOhms = hasGasReading
-                ? reading.gas_resistance_ohms
-                : "";
-            gasResistance.textContent = hasGasReading
-                ? formatGasResistance(reading.gas_resistance_ohms)
-                : "";
+                const label = document.createElement("span");
+                label.className = "label";
+                label.textContent = measurement.label;
+
+                const value = document.createElement("span");
+                value.className = "measurement-value";
+                value.textContent = measurement.display_value;
+
+                row.append(label, value);
+                measurementList.appendChild(row);
+            });
 
             card.querySelector(".device-id").textContent = reading.device_id;
             card.querySelector(".ip-address").textContent = reading.ip_address || "Unknown";
@@ -409,24 +394,10 @@
             hardwareList.replaceChildren();
 
             if (reading.hardware) {
-                [
-                    ["bme280", "BME280"],
-                    ["bme688", "BME688"],
-                    ["oled", "OLED"]
-                ].forEach(function (hardware) {
-                    if (!reading.hardware[hardware[0]]) return;
+                reading.hardware.forEach(function (hardwareName) {
                     const badge = document.createElement("span");
                     badge.className = "hardware-badge";
-
-                    if (hardware[0] === "bme688") {
-                        const icon = document.createElement("span");
-                        icon.className = "hardware-icon";
-                        icon.setAttribute("aria-hidden", "true");
-                        icon.textContent = "≋";
-                        badge.appendChild(icon);
-                    }
-
-                    badge.appendChild(document.createTextNode(hardware[1]));
+                    badge.textContent = hardwareName;
                     hardwareList.appendChild(badge);
                 });
             } else {

@@ -1,10 +1,14 @@
 import json
+import math
+import re
 import sqlite3
 
 from paho.mqtt import client as mqtt
 
 DB_FILE = "data/climatecube.db"
 MQTT_TOPIC = "climatecube/readings"
+MEASUREMENT_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+DISPLAY_FORMATS = {"number", "resistance", "temperature"}
 
 
 def on_connect(client, userdata, flags, reason_code):
@@ -23,6 +27,31 @@ def on_disconnect(client, userdata, reason_code):
 
 def ensure_schema():
     with sqlite3.connect(DB_FILE) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS measurement_definition (
+                measurement_key TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                unit TEXT NOT NULL,
+                precision_digits INTEGER NOT NULL DEFAULT 2,
+                display_format TEXT NOT NULL DEFAULT 'number',
+                display_order INTEGER NOT NULL DEFAULT 100
+            );
+            CREATE TABLE IF NOT EXISTS sensor_measurement (
+                reading_id INTEGER NOT NULL,
+                measurement_key TEXT NOT NULL,
+                measurement_value REAL NOT NULL,
+                PRIMARY KEY (reading_id, measurement_key),
+                FOREIGN KEY (reading_id)
+                    REFERENCES sensor_reading(reading_id) ON DELETE CASCADE,
+                FOREIGN KEY (measurement_key)
+                    REFERENCES measurement_definition(measurement_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sensor_measurement_key_reading
+            ON sensor_measurement(measurement_key, reading_id);
+            """
+        )
+
         sensor_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(sensor)")
@@ -72,18 +101,39 @@ def ensure_schema():
 
 
 def get_hardware_metadata(payload):
+    hardware_devices = payload.get("hardware_devices")
+
+    if isinstance(hardware_devices, list):
+        normalized_hardware = []
+        for device in hardware_devices:
+            if not isinstance(device, str):
+                continue
+            device = device.strip()[:50]
+            if device and device not in normalized_hardware:
+                normalized_hardware.append(device)
+
+        sensor_type = next(
+            (device for device in normalized_hardware if device.startswith("BME")),
+            None
+        )
+        return json.dumps(normalized_hardware), sensor_type
+
     hardware = payload.get("hardware")
 
     if isinstance(hardware, dict):
-        normalized_hardware = {
-            "bme280": bool(hardware.get("bme280")),
-            "bme688": bool(hardware.get("bme688")),
-            "oled": bool(hardware.get("oled"))
+        hardware_names = {
+            "bme280": "BME280",
+            "bme688": "BME688",
+            "mics6814": "MICS6814",
+            "oled": "OLED"
         }
+        normalized_hardware = [
+            name for key, name in hardware_names.items() if hardware.get(key)
+        ]
 
-        if normalized_hardware["bme688"]:
+        if hardware.get("bme688"):
             sensor_type = "BME688"
-        elif normalized_hardware["bme280"]:
+        elif hardware.get("bme280"):
             sensor_type = "BME280"
         else:
             sensor_type = None
@@ -94,6 +144,94 @@ def get_hardware_metadata(payload):
         return None, "BME688"
 
     return None, None
+
+
+def get_measurements(payload):
+    descriptors = payload.get("measurements")
+    if not isinstance(descriptors, list):
+        return []
+
+    measurements = []
+    for descriptor in descriptors[:50]:
+        if not isinstance(descriptor, dict):
+            continue
+
+        key = descriptor.get("key")
+        label = descriptor.get("label")
+        unit = descriptor.get("unit", "")
+
+        if not isinstance(key, str) or not MEASUREMENT_KEY_PATTERN.fullmatch(key):
+            continue
+        if not isinstance(label, str) or not label.strip():
+            continue
+        if not isinstance(unit, str):
+            continue
+
+        try:
+            value = float(descriptor.get("value"))
+            precision = max(0, min(6, int(descriptor.get("precision", 2))))
+            display_order = int(descriptor.get("order", 100))
+        except (TypeError, ValueError):
+            continue
+
+        if not math.isfinite(value):
+            continue
+
+        display_format = descriptor.get("format", "number")
+        if display_format not in DISPLAY_FORMATS:
+            display_format = "number"
+
+        measurements.append({
+            "key": key,
+            "label": label.strip()[:80],
+            "unit": unit.strip()[:20],
+            "value": value,
+            "precision": precision,
+            "format": display_format,
+            "order": display_order
+        })
+
+    return measurements
+
+
+def store_measurements(conn, reading_id, measurements):
+    for measurement in measurements:
+        conn.execute(
+            """
+            INSERT INTO measurement_definition
+            (
+                measurement_key,
+                label,
+                unit,
+                precision_digits,
+                display_format,
+                display_order
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(measurement_key) DO UPDATE SET
+                label = excluded.label,
+                unit = excluded.unit,
+                precision_digits = excluded.precision_digits,
+                display_format = excluded.display_format,
+                display_order = excluded.display_order
+            """,
+            (
+                measurement["key"],
+                measurement["label"],
+                measurement["unit"],
+                measurement["precision"],
+                measurement["format"],
+                measurement["order"]
+            )
+        )
+        conn.execute(
+            """
+            INSERT INTO sensor_measurement
+            (reading_id, measurement_key, measurement_value)
+            VALUES (?, ?, ?)
+            """,
+            (reading_id, measurement["key"], measurement["value"])
+        )
 
 
 def on_message(client, userdata, msg):
@@ -107,6 +245,7 @@ def on_message(client, userdata, msg):
     ip_address = payload.get("ip_address")
     reading_interval_sec = payload.get("reading_interval_sec")
     hardware_json, sensor_type = get_hardware_metadata(payload)
+    measurements = get_measurements(payload)
 
     if reading_interval_sec is not None:
         reading_interval_sec = int(reading_interval_sec)
@@ -217,6 +356,8 @@ def on_message(client, userdata, msg):
             payload.get("gas_resistance_ohms")
         )
     )
+
+    store_measurements(conn, cursor.lastrowid, measurements)
 
     conn.commit()
     conn.close()

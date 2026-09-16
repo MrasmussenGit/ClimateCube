@@ -77,6 +77,34 @@ CREATE INDEX idx_sensor_reading_sensor_time
 ON sensor_reading(sensor_id, pico_ts);
 
 -- ==========================================
+-- Extensible Measurements
+-- ==========================================
+
+CREATE TABLE measurement_definition (
+    measurement_key TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    precision_digits INTEGER NOT NULL DEFAULT 2,
+    display_format TEXT NOT NULL DEFAULT 'number',
+    display_order INTEGER NOT NULL DEFAULT 100
+);
+
+CREATE TABLE sensor_measurement (
+    reading_id INTEGER NOT NULL,
+    measurement_key TEXT NOT NULL,
+    measurement_value REAL NOT NULL,
+
+    PRIMARY KEY (reading_id, measurement_key),
+    FOREIGN KEY (reading_id)
+        REFERENCES sensor_reading(reading_id) ON DELETE CASCADE,
+    FOREIGN KEY (measurement_key)
+        REFERENCES measurement_definition(measurement_key)
+);
+
+CREATE INDEX idx_sensor_measurement_key_reading
+ON sensor_measurement(measurement_key, reading_id);
+
+-- ==========================================
 -- Outdoor Weather
 -- ==========================================
 

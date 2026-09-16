@@ -89,11 +89,13 @@
         const metricCheckboxes = document.querySelectorAll(
             ".metric-control input"
         );
+        const metricControls = document.querySelector(".metric-controls");
         const status = document.getElementById("status");
         const timezoneDetails = document.getElementById("timezone-details");
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
         let currentRange = "24h";
         let historyReadings = [];
+        let additionalMeasurements = [];
 
         const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timezoneDetails.textContent = "Times shown in " + (timezoneName || "your local timezone");
@@ -228,10 +230,58 @@
                         display: false,
                         title: { display: true, text: "Pressure (hPa)" },
                         grid: { drawOnChartArea: false }
+                    },
+                    resistance: {
+                        type: "logarithmic",
+                        position: "right",
+                        display: false,
+                        title: { display: true, text: "Resistance (Ω)" },
+                        grid: { drawOnChartArea: false }
                     }
                 }
             }
         });
+
+        function addMeasurementDatasets() {
+            chart.data.datasets.splice(6);
+            metricControls.querySelectorAll(".additional-metric").forEach(function (control) {
+                control.remove();
+            });
+
+            const definitions = Array.from(new Map(additionalMeasurements.map(function (measurement) {
+                return [measurement.key, measurement];
+            })).values());
+            const colors = ["#a93226", "#7d3c98", "#117864", "#b9770e", "#2e86c1"];
+
+            definitions.forEach(function (definition, index) {
+                const values = new Map(additionalMeasurements
+                    .filter(function (measurement) { return measurement.key === definition.key; })
+                    .map(function (measurement) { return [measurement.reading_time, measurement.value]; }));
+                const datasetIndex = chart.data.datasets.length;
+                chart.data.datasets.push({
+                    label: definition.label,
+                    data: historyReadings.map(function (reading) {
+                        const value = values.get(reading.reading_time);
+                        return value === undefined ? null : Number(value);
+                    }),
+                    borderColor: colors[index % colors.length],
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.15,
+                    spanGaps: true,
+                    hidden: true,
+                    yAxisID: definition.format === "resistance" ? "resistance" : "pressure"
+                });
+
+                const label = document.createElement("label");
+                label.className = "metric-control additional-metric";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.dataset.dataset = datasetIndex;
+                label.append(checkbox, document.createTextNode(definition.label));
+                metricControls.appendChild(label);
+            });
+        }
 
         function updateChart() {
             const useFahrenheit = temperatureUnit === "F";
@@ -277,6 +327,8 @@
                 if (!response.ok) throw new Error("History request failed");
                 const result = await response.json();
                 historyReadings = result.readings;
+                additionalMeasurements = result.measurements;
+                addMeasurementDatasets();
                 updateChart();
                 status.textContent = historyReadings.length
                     ? historyReadings.length + " chart points"
@@ -296,11 +348,17 @@
         });
 
         function updateMetricVisibility() {
-            metricCheckboxes.forEach(function (checkbox) {
+            document.querySelectorAll(".metric-control input").forEach(function (checkbox) {
                 const datasetIndex = Number(checkbox.dataset.dataset);
                 const dataset = chart.data.datasets[datasetIndex];
                 dataset.hidden = !checkbox.checked;
-                chart.options.scales[dataset.yAxisID].display = checkbox.checked;
+            });
+
+            Object.keys(chart.options.scales).forEach(function (axisName) {
+                if (axisName === "x") return;
+                chart.options.scales[axisName].display = chart.data.datasets.some(function (dataset) {
+                    return dataset.yAxisID === axisName && !dataset.hidden;
+                });
             });
 
             chart.update();
@@ -308,6 +366,12 @@
 
         metricCheckboxes.forEach(function (checkbox) {
             checkbox.addEventListener("change", updateMetricVisibility);
+        });
+
+        metricControls.addEventListener("change", function (event) {
+            if (event.target.matches(".additional-metric input")) {
+                updateMetricVisibility();
+            }
         });
 
         unitButton.addEventListener("click", function () {

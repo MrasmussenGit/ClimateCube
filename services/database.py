@@ -52,6 +52,132 @@ def ensure_weather_schema():
         )
 
 
+def ensure_measurement_schema():
+    with get_connection() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS measurement_definition (
+                measurement_key TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                unit TEXT NOT NULL,
+                precision_digits INTEGER NOT NULL DEFAULT 2,
+                display_format TEXT NOT NULL DEFAULT 'number',
+                display_order INTEGER NOT NULL DEFAULT 100
+            );
+            CREATE TABLE IF NOT EXISTS sensor_measurement (
+                reading_id INTEGER NOT NULL,
+                measurement_key TEXT NOT NULL,
+                measurement_value REAL NOT NULL,
+                PRIMARY KEY (reading_id, measurement_key),
+                FOREIGN KEY (reading_id)
+                    REFERENCES sensor_reading(reading_id) ON DELETE CASCADE,
+                FOREIGN KEY (measurement_key)
+                    REFERENCES measurement_definition(measurement_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sensor_measurement_key_reading
+            ON sensor_measurement(measurement_key, reading_id);
+            """
+        )
+
+
+def format_measurement_value(value, unit, precision, display_format):
+    if display_format == "resistance":
+        if value >= 1000000:
+            return "{:.{}f} MΩ".format(value / 1000000, precision)
+        if value >= 1000:
+            return "{:.{}f} kΩ".format(value / 1000, precision)
+        return "{:.{}f} Ω".format(value, precision)
+
+    return "{:.{}f}{}{}".format(
+        value,
+        precision,
+        " " if unit else "",
+        unit
+    )
+
+
+def get_legacy_measurements(reading):
+    definitions = [
+        ("temperature_c", "Temperature", reading["temperature_c"], "°C", 2, "temperature", 10),
+        ("humidity_pct", "Humidity", reading["humidity_pct"], "%", 2, "number", 20),
+        ("pressure_hpa", "Pressure", reading["pressure_hpa"], "hPa", 2, "number", 30),
+        ("bme688_gas_resistance_ohms", "BME688 gas resistance", reading["gas_resistance_ohms"], "Ω", 2, "resistance", 40)
+    ]
+    return [
+        {
+            "key": key,
+            "label": label,
+            "value": value,
+            "unit": unit,
+            "precision": precision,
+            "format": display_format,
+            "order": display_order,
+            "display_value": format_measurement_value(
+                value, unit, precision, display_format
+            )
+        }
+        for key, label, value, unit, precision, display_format, display_order
+        in definitions
+        if value is not None
+    ]
+
+
+def add_latest_measurements(readings):
+    if not readings:
+        return readings
+
+    ensure_measurement_schema()
+    reading_ids = [reading["reading_id"] for reading in readings]
+    placeholders = ",".join("?" for _ in reading_ids)
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                sm.reading_id,
+                sm.measurement_key AS key,
+                md.label,
+                sm.measurement_value AS value,
+                md.unit,
+                md.precision_digits AS precision,
+                md.display_format AS format,
+                md.display_order AS display_order
+            FROM sensor_measurement AS sm
+            JOIN measurement_definition AS md
+                ON md.measurement_key = sm.measurement_key
+            WHERE sm.reading_id IN ({})
+            ORDER BY md.display_order, md.label
+            """.format(placeholders),
+            reading_ids
+        ).fetchall()
+
+    measurements_by_reading = {reading_id: [] for reading_id in reading_ids}
+    for row in rows:
+        measurement = dict(row)
+        reading_id = measurement.pop("reading_id")
+        measurement["order"] = measurement.pop("display_order")
+        measurement["display_value"] = format_measurement_value(
+            measurement["value"],
+            measurement["unit"],
+            measurement["precision"],
+            measurement["format"]
+        )
+        measurements_by_reading[reading_id].append(measurement)
+
+    for reading in readings:
+        measurements = measurements_by_reading[reading["reading_id"]]
+        if not measurements:
+            measurements = get_legacy_measurements(reading)
+        reading["measurements"] = measurements
+        reading["secondary_measurements"] = [
+            measurement for measurement in measurements
+            if measurement["key"] != "temperature_c"
+        ]
+        reading.pop("reading_id")
+
+    return readings
+
+
 def get_weather_settings():
     ensure_weather_schema()
 
@@ -136,6 +262,7 @@ def get_latest_readings(include_inactive=False):
         rows = conn.execute(
             """
             SELECT
+                r.reading_id,
                 s.sensor_id,
                 s.sensor_name,
                 s.device_id,
@@ -166,18 +293,31 @@ def get_latest_readings(include_inactive=False):
 
     readings = []
 
+    hardware_names = {
+        "bme280": "BME280",
+        "bme688": "BME688",
+        "mics6814": "MICS6814",
+        "oled": "OLED"
+    }
+
     for row in rows:
         reading = dict(row)
         hardware_json = reading.pop("hardware_json", None)
 
         try:
-            reading["hardware"] = json.loads(hardware_json) if hardware_json else None
+            hardware = json.loads(hardware_json) if hardware_json else None
+            if isinstance(hardware, dict):
+                hardware = [
+                    hardware_names.get(key, key)
+                    for key, present in hardware.items() if present
+                ]
+            reading["hardware"] = hardware
         except (TypeError, json.JSONDecodeError):
             reading["hardware"] = None
 
         readings.append(reading)
 
-    return readings
+    return add_latest_measurements(readings)
 
 
 def get_sensor(sensor_id):
@@ -292,6 +432,57 @@ def get_temperature_history(sensor_id, range_name):
                     ) AS INTEGER
                 ) / ?
             ORDER BY reading_time
+            """,
+            (sensor_id, sensor_id, modifier, bucket_seconds)
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def get_additional_measurement_history(sensor_id, range_name):
+    modifier, bucket_seconds = HISTORY_RANGES[range_name]
+    ensure_measurement_schema()
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            WITH latest AS
+            (
+                SELECT MAX(COALESCE(pico_ts, insert_ts)) AS latest_ts
+                FROM sensor_reading
+                WHERE sensor_id = ?
+            )
+            SELECT
+                MAX(COALESCE(r.pico_ts, r.insert_ts)) AS reading_time,
+                sm.measurement_key AS key,
+                md.label,
+                md.unit,
+                md.precision_digits AS precision,
+                md.display_format AS format,
+                md.display_order AS display_order,
+                AVG(sm.measurement_value) AS value
+            FROM sensor_measurement AS sm
+            JOIN sensor_reading AS r ON r.reading_id = sm.reading_id
+            JOIN measurement_definition AS md
+                ON md.measurement_key = sm.measurement_key
+            CROSS JOIN latest
+            WHERE r.sensor_id = ?
+              AND sm.measurement_key NOT IN
+                  ('temperature_c', 'humidity_pct', 'pressure_hpa')
+              AND datetime(
+                    replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                  ) >= datetime(
+                    replace(latest.latest_ts, 'T', ' '), ?
+                  )
+            GROUP BY
+                sm.measurement_key,
+                CAST(
+                    strftime(
+                        '%s',
+                        replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                    ) AS INTEGER
+                ) / ?
+            ORDER BY md.display_order, reading_time
             """,
             (sensor_id, sensor_id, modifier, bucket_seconds)
         ).fetchall()

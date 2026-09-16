@@ -1,6 +1,6 @@
 import wifi
 import ntpTime
-import sensor
+import sensor_manager
 import time
 import mqttClient
 import display
@@ -150,9 +150,9 @@ sensor_missing = False
 sensor_retry_index = 0
 
 while True:
-    data = sensor.GetTempData()
+    sensor_reading = sensor_manager.read()
 
-    if data is None:
+    if sensor_reading is None:
         retry_delay = SENSOR_RETRY_DELAYS_SEC[sensor_retry_index]
 
         if not sensor_missing:
@@ -168,6 +168,8 @@ while True:
             len(SENSOR_RETRY_DELAYS_SEC) - 1
         )
         continue
+
+    data = sensor_reading["environmental"]
 
     if sensor_missing:
         log("Environmental sensor detected; resuming readings")
@@ -193,10 +195,15 @@ while True:
         "ip_address": ip_address,
         "timestamp": timestamp,
         "hardware": {
-            "bme280": sensor.get_sensor_type() == "BME280",
-            "bme688": sensor.get_sensor_type() == "BME688",
+            "bme280": "BME280" in sensor_reading["hardware"],
+            "bme688": "BME688" in sensor_reading["hardware"],
+            "mics6814": "MICS6814" in sensor_reading["hardware"],
             "oled": display.is_available()
         },
+        "hardware_devices": sensor_reading["hardware"] + (
+            ["OLED"] if display.is_available() else []
+        ),
+        "measurements": sensor_reading["measurements"],
         "temperature_c": data["temperature_c"],
         "humidity_pct": data["humidity_pct"],
         "pressure_hpa": data["pressure_hpa"],
