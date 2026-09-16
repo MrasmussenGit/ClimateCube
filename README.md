@@ -25,6 +25,21 @@ ClimateCube currently supports these devices on the Pico W I2C bus:
 - BME688 temperature, humidity, pressure, and gas-resistance sensor
 - Pimoroni MICS6814 three-channel gas sensor at address `0x19` or `0x18`
 - SSD1306 OLED display at address `0x3C`
+- EC11 rotary encoder with push button
+
+Connect the bare EC11 encoder using the Pico's internal pull-ups:
+
+| EC11 contact | Pico GPIO | Physical pin |
+| --- | --- | --- |
+| Encoder outer A | GP10 | 14 |
+| Encoder common (middle) | GND | 18 |
+| Encoder outer B | GP11 | 15 |
+| Push-button contact | GND | 18 |
+| Other push-button contact | GP12 | 16 |
+
+Pressing the encoder takes and publishes an immediate reading without resetting
+the regular reading schedule. Rotating it selects the OLED summary, environment,
+and network/device pages. Swap A and B if the page direction feels reversed.
 
 MICS6814 readings are stored and displayed as resistance trends for reducing,
 oxidising, and NH3-sensitive channels. They are not displayed as ppm because

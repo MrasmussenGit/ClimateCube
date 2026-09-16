@@ -5,6 +5,7 @@ import time
 
 oled = None
 page = 0
+PAGE_COUNT = 3
 
 
 def init():
@@ -134,7 +135,14 @@ def _format_countdown(seconds_remaining):
     return "{:02}:{:02}".format(minutes, seconds)
 
 
-def update(data, dt, seconds_remaining=None):
+def change_page(direction):
+    global page
+
+    page = (page + direction) % PAGE_COUNT
+    return page
+
+
+def update(data, dt, seconds_remaining=None, ip_address=None):
     temp_c = data["temperature_c"]
     temp_f = (temp_c * 9 / 5) + 32
 
@@ -142,6 +150,20 @@ def update(data, dt, seconds_remaining=None):
     pressure = data["pressure_hpa"]
 
     def draw():
+        if page == 1:
+            oled.text("ENVIRONMENT", 0, 0)
+            oled.text("Temp: {:.1f} F".format(temp_f), 0, 18)
+            oled.text("Humidity: {:.1f}%".format(humidity), 0, 34)
+            oled.text("Pressure: {:.1f}".format(pressure), 0, 50)
+            return
+
+        if page == 2:
+            oled.text("NETWORK", 0, 0)
+            oled.text(device.get_display_id(), 0, 18)
+            oled.text("IP address", 0, 34)
+            oled.text(ip_address or "Not connected", 0, 50)
+            return
+
         oled.text(device.get_display_id(), 0, 0)
         if seconds_remaining is not None:
             countdown = _format_countdown(seconds_remaining)

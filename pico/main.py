@@ -5,6 +5,7 @@ import time
 import mqttClient
 import display
 import device
+import controls
 import os
 from machine import RTC
 from config import READING_INTERVAL_SEC
@@ -100,13 +101,30 @@ def ensure_mqtt(wlan):
             time.sleep(RECONNECT_DELAY_SEC)
 
 
-def wait_for_next_reading(data):
-    remaining = READING_INTERVAL_SEC
+def wait_for_next_reading(data, ip_address, scheduled_at):
+    next_display_at = 0
 
-    while remaining > 0:
-        display.update(data, rtc.datetime(), remaining)
-        time.sleep(1)
-        remaining -= 1
+    while time.ticks_diff(scheduled_at, time.ticks_ms()) > 0:
+        rotation, pressed = controls.poll()
+        if rotation:
+            display.change_page(rotation)
+            next_display_at = 0
+        if pressed:
+            return True
+
+        now = time.ticks_ms()
+        if time.ticks_diff(now, next_display_at) >= 0:
+            remaining_ms = max(0, time.ticks_diff(scheduled_at, now))
+            display.update(
+                data,
+                rtc.datetime(),
+                (remaining_ms + 999) // 1000,
+                ip_address
+            )
+            next_display_at = time.ticks_add(now, 1000)
+        time.sleep_ms(10)
+
+    return False
 
 
 # Connect to WiFi
@@ -146,8 +164,11 @@ log(
 log("Monitor Started")
 log("----------------------------")
 
+controls.init()
 sensor_missing = False
 sensor_retry_index = 0
+scheduled_at = None
+manual_reading = False
 
 while True:
     sensor_reading = sensor_manager.read()
@@ -177,7 +198,7 @@ while True:
         sensor_retry_index = 0
 
     dt = rtc.datetime()
-    display.update(data, dt)
+    display.update(data, dt, ip_address=ip_address)
 
     hour = dt[4]
 
@@ -211,6 +232,8 @@ while True:
     }
 
     log(timestamp)
+    if manual_reading:
+        log("Manual reading requested")
     log(f"Temp = {data['temperature_c']} C")
     log(f"Humidity = {data['humidity_pct']} %")
     log(f"Pressure = {data['pressure_hpa']} hPa")
@@ -231,4 +254,16 @@ while True:
             mqttClient.disconnect()
             wlan, ip_address = ensure_mqtt(wlan)
 
-    wait_for_next_reading(data)
+    if not manual_reading:
+        now = time.ticks_ms()
+        if scheduled_at is None or time.ticks_diff(scheduled_at, now) <= 0:
+            scheduled_at = time.ticks_add(
+                now,
+                READING_INTERVAL_SEC * 1000
+            )
+
+    manual_reading = wait_for_next_reading(
+        data,
+        ip_address,
+        scheduled_at
+    )
