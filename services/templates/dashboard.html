@@ -29,14 +29,22 @@
         .sensor-heading h2 { margin-bottom: 0; }
         .hidden-badge { padding: 4px 8px; border-radius: 999px; background: var(--border); color: var(--muted); font-size: 12px; font-weight: bold; }
         .temperature { margin: 20px 0; color: #d35400; font-size: 42px; font-weight: bold; }
-        .primary-reading { margin: 20px 0; }
+        .primary-reading { position: relative; margin: 20px 0; }
         .primary-reading .temperature { margin: 0 0 8px; }
-        .reading { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
+        .reading { position: relative; display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
         .label { color: var(--muted); }
+        .label-with-help { display: inline-flex; align-items: center; gap: 6px; }
+        .help { display: inline-flex; }
+        .help-button { display: inline-grid; place-items: center; width: 17px; height: 17px; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; color: var(--muted); font: bold 11px/1 Arial, sans-serif; cursor: help; }
+        .help-button:hover, .help-button:focus-visible { border-color: var(--text); color: var(--text); outline: 2px solid var(--info); outline-offset: 2px; }
+        .help-text { position: absolute; z-index: 10; bottom: calc(100% + 8px); left: 0; box-sizing: border-box; width: min(280px, calc(100vw - 70px)); padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.35; text-align: left; visibility: hidden; opacity: 0; pointer-events: none; }
+        .help-button:hover + .help-text, .help-button:focus + .help-text { visibility: visible; opacity: 1; }
+        .primary-help { margin-left: 7px; vertical-align: middle; }
         .reading-result { display: grid; justify-items: end; gap: 5px; text-align: right; }
         .measurement-status { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 8px; border-radius: 999px; background: var(--learning-bg); color: var(--learning); font-size: 12px; font-weight: bold; }
         .measurement-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
         .trend-arrow { font-size: 15px; line-height: 10px; }
+        .baseline-change { font-variant-numeric: tabular-nums; }
         .measurement-status.status-normal { background: var(--normal-bg); color: var(--normal); }
         .measurement-status.status-info { background: var(--info-bg); color: var(--info); }
         .measurement-status.status-warning { background: var(--warning-bg); color: var(--warning-text); }
@@ -125,38 +133,39 @@
                     </div>
                     <div class="primary-reading">
                         <div id="weather-temperature" class="temperature" data-temperature-c="{{ weather.temperature_c }}">
-                            {{ "%.2f"|format(weather.temperature_c) }} °C
+                            <span class="temperature-value">{{ "%.2f"|format(weather.temperature_c) }} °C</span>
+                            <span class="help primary-help"><button class="help-button" type="button" aria-describedby="weather-temperature-help">i</button><span id="weather-temperature-help" class="help-text" role="tooltip">Air temperature measures how warm or cold the air is.</span></span>
                         </div>
                         <span id="weather-temperature-status" class="measurement-status status-{{ weather.temperature_status.level }}"{% if weather.temperature_status.trend_label %} aria-label="{{ weather.temperature_status.label }}, {{ weather.temperature_status.trend_label|lower }} compared with recent average"{% endif %}>{% if weather.temperature_status.trend_symbol %}<span class="trend-arrow" aria-hidden="true">{{ weather.temperature_status.trend_symbol }}</span>{% endif %}{{ weather.temperature_status.label }}</span>
                     </div>
                     <div class="reading">
-                        <span class="label">Humidity</span>
+                        <span class="label label-with-help">Humidity <span class="help"><button class="help-button" type="button" aria-describedby="weather-humidity-help">i</button><span id="weather-humidity-help" class="help-text" role="tooltip">Relative humidity is the amount of moisture in the air compared with the maximum it can hold at the current temperature.</span></span></span>
                         <span class="reading-result">
                             <span id="weather-humidity">{{ "%.0f"|format(weather.humidity_pct) }} %</span>
                             <span id="weather-humidity-status" class="measurement-status status-{{ weather.humidity_status.level }}"{% if weather.humidity_status.trend_label %} aria-label="{{ weather.humidity_status.label }}, {{ weather.humidity_status.trend_label|lower }} compared with recent average"{% endif %}>{% if weather.humidity_status.trend_symbol %}<span class="trend-arrow" aria-hidden="true">{{ weather.humidity_status.trend_symbol }}</span>{% endif %}{{ weather.humidity_status.label }}</span>
                         </span>
                     </div>
                     <div class="reading">
-                        <span class="label">Dew point</span>
+                        <span class="label label-with-help">Dew point <span class="help"><button class="help-button" type="button" aria-describedby="weather-dew-help">i</button><span id="weather-dew-help" class="help-text" role="tooltip">Dew point is the temperature at which air becomes saturated and water begins to condense. A higher dew point usually feels more humid.</span></span></span>
                         <span id="weather-dew-point" data-temperature-c="{{ weather.dew_point_c }}">{% if weather.dew_point_c is not none %}{{ "%.1f"|format(weather.dew_point_c) }} °C{% else %}--{% endif %}</span>
                     </div>
                     <div class="reading">
-                        <span class="label">Pressure</span>
+                        <span class="label label-with-help">Pressure <span class="help"><button class="help-button" type="button" aria-describedby="weather-pressure-help">i</button><span id="weather-pressure-help" class="help-text" role="tooltip">Atmospheric pressure is the force exerted by the air. Rising pressure often accompanies improving weather; falling pressure can precede unsettled weather.</span></span></span>
                         <span class="reading-result">
                             <span id="weather-pressure">{% if weather.pressure_hpa is not none %}{{ "%.1f"|format(weather.pressure_hpa) }} hPa{% else %}--{% endif %}</span>
                             {% if weather.pressure_status %}<span id="weather-pressure-status" class="measurement-status status-{{ weather.pressure_status.level }}"{% if weather.pressure_status.trend_label %} aria-label="{{ weather.pressure_status.label }}, {{ weather.pressure_status.trend_label|lower }} compared with recent average"{% endif %}>{% if weather.pressure_status.trend_symbol %}<span class="trend-arrow" aria-hidden="true">{{ weather.pressure_status.trend_symbol }}</span>{% endif %}{{ weather.pressure_status.label }}</span>{% endif %}
                         </span>
                     </div>
                     <div class="reading">
-                        <span class="label">Wind</span>
+                        <span class="label label-with-help">Wind <span class="help"><button class="help-button" type="button" aria-describedby="weather-wind-help">i</button><span id="weather-wind-help" class="help-text" role="tooltip">Wind speed measures how quickly air is moving at the weather observation location.</span></span></span>
                         <span id="weather-wind">{% if weather.wind_speed_kmh is not none %}{{ "%.1f"|format(weather.wind_speed_kmh) }} km/h{% else %}--{% endif %}</span>
                     </div>
                     <div class="reading">
-                        <span class="label">Cloud cover</span>
+                        <span class="label label-with-help">Cloud cover <span class="help"><button class="help-button" type="button" aria-describedby="weather-cloud-help">i</button><span id="weather-cloud-help" class="help-text" role="tooltip">Cloud cover is the percentage of the sky estimated to be obscured by clouds.</span></span></span>
                         <span id="weather-clouds">{% if weather.cloud_cover_pct is not none %}{{ "%.0f"|format(weather.cloud_cover_pct) }} %{% else %}--{% endif %}</span>
                     </div>
                     <div class="reading">
-                        <span class="label">Source</span>
+                        <span class="label label-with-help">Source <span class="help"><button class="help-button" type="button" aria-describedby="weather-source-help">i</button><span id="weather-source-help" class="help-text" role="tooltip">The outdoor observations come from Open-Meteo forecast and weather-model data for the configured location.</span></span></span>
                         <span><a class="source-link" href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></span>
                     </div>
                     <div class="timestamp">
@@ -174,17 +183,18 @@
                     </div>
                     <div class="primary-reading">
                         <div class="temperature" data-temperature-c="{{ reading.temperature_c }}">
-                            {{ "%.2f"|format(reading.temperature_c) }} °C
+                            <span class="temperature-value">{{ "%.2f"|format(reading.temperature_c) }} °C</span>
+                            <span class="help primary-help"><button class="help-button" type="button" aria-describedby="temperature-help-{{ reading.sensor_id }}">i</button><span id="temperature-help-{{ reading.sensor_id }}" class="help-text" role="tooltip">Air temperature measures how warm or cold the air is.</span></span>
                         </div>
                         <span class="temperature-status measurement-status status-{{ reading.temperature_status.level }}"{% if reading.temperature_status.trend_label %} aria-label="{{ reading.temperature_status.label }}, {{ reading.temperature_status.trend_label|lower }} compared with recent average"{% endif %}>{% if reading.temperature_status.trend_symbol %}<span class="trend-arrow" aria-hidden="true">{{ reading.temperature_status.trend_symbol }}</span>{% endif %}{{ reading.temperature_status.label }}</span>
                     </div>
                     <div class="measurement-list">
                         {% for measurement in reading.secondary_measurements %}
                             <div class="reading" data-measurement-key="{{ measurement.key }}">
-                                <span class="label">{{ measurement.label }}</span>
+                                <span class="label label-with-help">{{ measurement.label }} <span class="help"><button class="help-button" type="button" aria-describedby="measurement-help-{{ reading.sensor_id }}-{{ measurement.key }}">i</button><span id="measurement-help-{{ reading.sensor_id }}-{{ measurement.key }}" class="help-text" role="tooltip">{{ measurement.description }}</span></span></span>
                                 <span class="reading-result">
                                     <span class="measurement-value">{{ measurement.display_value }}</span>
-                                    <span class="measurement-status status-{{ measurement.status.level }}"{% if measurement.status.trend_label %} aria-label="{{ measurement.status.label }}, {{ measurement.status.trend_label|lower }} compared with recent average"{% endif %}{% if measurement.format == "resistance" %} title="Compared with this sensor's recent resistance baseline; not a calibrated gas safety alarm."{% endif %}>{% if measurement.status.trend_symbol %}<span class="trend-arrow" aria-hidden="true">{{ measurement.status.trend_symbol }}</span>{% endif %}{{ measurement.status.label }}</span>
+                                    <span class="measurement-status status-{{ measurement.status.level }}"{% if measurement.status.baseline_change_label %} aria-label="{{ measurement.status.label }}, {{ measurement.status.baseline_change_label }}"{% elif measurement.status.trend_label %} aria-label="{{ measurement.status.label }}, {{ measurement.status.trend_label|lower }} compared with recent average"{% endif %}{% if measurement.format == "resistance" %} title="{% if measurement.status.baseline_change_label %}{{ measurement.status.baseline_change_label|capitalize }}. {% endif %}Resistance change is relative to this sensor's recent baseline; not a calibrated gas safety alarm."{% endif %}>{% if measurement.status.trend_symbol %}<span class="trend-arrow" aria-hidden="true">{{ measurement.status.trend_symbol }}</span>{% endif %}{% if measurement.status.baseline_change_pct is defined %}<span class="baseline-change">{{ "%.1f"|format(measurement.status.baseline_change_pct) }}%</span>{% endif %}{{ measurement.status.label }}</span>
                                 </span>
                             </div>
                         {% endfor %}
@@ -269,6 +279,22 @@
         const pollIntervalMilliseconds = 10000;
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
 
+        function createHelp(description) {
+            const help = document.createElement("span");
+            help.className = "help";
+            const button = document.createElement("button");
+            button.className = "help-button";
+            button.type = "button";
+            button.textContent = "i";
+            button.setAttribute("aria-label", "About this measurement");
+            const text = document.createElement("span");
+            text.className = "help-text";
+            text.setAttribute("role", "tooltip");
+            text.textContent = description;
+            help.append(button, text);
+            return help;
+        }
+
         function updateThemeButton() {
             const dark = document.documentElement.dataset.theme === "dark";
             themeButton.textContent = dark ? "Light mode" : "Dark mode";
@@ -314,7 +340,8 @@
             temperatures.forEach(function (element) {
                 const celsius = Number(element.dataset.temperatureC);
                 const value = temperatureUnit === "F" ? (celsius * 9 / 5) + 32 : celsius;
-                element.textContent = value.toFixed(2) + " °" + temperatureUnit;
+                element.querySelector(".temperature-value").textContent =
+                    value.toFixed(2) + " °" + temperatureUnit;
             });
             unitButton.textContent = temperatureUnit === "C" ? "Show °F" : "Show °C";
 
@@ -367,13 +394,17 @@
                 arrow.setAttribute("aria-hidden", "true");
                 arrow.textContent = status.trend_symbol;
                 element.appendChild(arrow);
-                element.setAttribute(
-                    "aria-label",
-                    status.label + ", " + status.trend_label.toLowerCase() +
-                        " compared with recent average"
-                );
+                const comparison = status.baseline_change_label ||
+                    status.trend_label.toLowerCase() + " compared with recent average";
+                element.setAttribute("aria-label", status.label + ", " + comparison);
             } else {
                 element.removeAttribute("aria-label");
+            }
+            if (status.baseline_change_pct !== undefined) {
+                const change = document.createElement("span");
+                change.className = "baseline-change";
+                change.textContent = Number(status.baseline_change_pct).toFixed(1) + "%";
+                element.appendChild(change);
             }
             element.appendChild(document.createTextNode(status.label));
         }
@@ -427,8 +458,11 @@
                 row.dataset.measurementKey = measurement.key;
 
                 const label = document.createElement("span");
-                label.className = "label";
-                label.textContent = measurement.label;
+                label.className = "label label-with-help";
+                label.append(
+                    document.createTextNode(measurement.label),
+                    createHelp(measurement.description)
+                );
 
                 const value = document.createElement("span");
                 value.className = "measurement-value";
@@ -439,7 +473,13 @@
                 const status = document.createElement("span");
                 applyMeasurementStatus(status, measurement.status);
                 if (measurement.format === "resistance") {
-                    status.title = "Compared with this sensor's recent resistance baseline; not a calibrated gas safety alarm.";
+                    const baselineDetail = measurement.status.baseline_change_label
+                        ? measurement.status.baseline_change_label.charAt(0).toUpperCase() +
+                            measurement.status.baseline_change_label.slice(1) + ". "
+                        : "";
+                    status.title = baselineDetail +
+                        "Resistance change is relative to this sensor's recent baseline; " +
+                        "not a calibrated gas safety alarm.";
                 }
                 result.append(value, status);
 

@@ -96,6 +96,53 @@ def format_measurement_value(value, unit, precision, display_format):
     )
 
 
+MEASUREMENT_DESCRIPTIONS = {
+    "temperature_c": (
+        "Air temperature measures how warm or cold the air is."
+    ),
+    "humidity_pct": (
+        "Relative humidity is the amount of moisture in the air compared "
+        "with the maximum it can hold at the current temperature."
+    ),
+    "pressure_hpa": (
+        "Atmospheric pressure is the force exerted by the air. Rising "
+        "pressure often accompanies improving weather; falling pressure "
+        "can precede unsettled weather."
+    ),
+    "bme688_gas_resistance_ohms": (
+        "BME688 gas resistance reflects how the sensor's heated surface "
+        "responds to volatile gases. Use changes as an air-quality trend, "
+        "not as a gas concentration or safety alarm."
+    ),
+    "mics6814_reducing_ohms": (
+        "Reducing-gas resistance responds to gases such as carbon monoxide, "
+        "hydrogen, and some volatile organic compounds. It shows relative "
+        "change, not a calibrated concentration or safety alarm."
+    ),
+    "mics6814_oxidising_ohms": (
+        "Oxidising-gas resistance responds to gases such as nitrogen dioxide. "
+        "It shows relative change, not a calibrated concentration or safety alarm."
+    ),
+    "mics6814_nh3_ohms": (
+        "The NH3-sensitive resistance channel responds strongly to ammonia "
+        "and can also respond to other gases. It shows relative change, not "
+        "a calibrated concentration or safety alarm."
+    )
+}
+
+
+def get_measurement_description(key, label):
+    if key in MEASUREMENT_DESCRIPTIONS:
+        return MEASUREMENT_DESCRIPTIONS[key]
+    if key.endswith("_ohms"):
+        return (
+            label + " is an electrical resistance reported by a gas sensor. "
+            "Use changes as a relative trend, not as a calibrated concentration "
+            "or safety alarm."
+        )
+    return label + " is the current value reported by this sensor."
+
+
 def add_measurement_trend(status, key, value, baseline, baseline_count):
     minimum_samples = 30 if key.endswith("_ohms") else 3
     if baseline_count < minimum_samples or baseline is None:
@@ -108,7 +155,7 @@ def add_measurement_trend(status, key, value, baseline, baseline_count):
     elif key == "pressure_hpa":
         threshold = 0.5
     elif key.endswith("_ohms"):
-        threshold = abs(baseline) * 0.1
+        threshold = abs(baseline) * 0.05
     else:
         threshold = max(abs(baseline) * 0.02, 0.01)
 
@@ -125,6 +172,21 @@ def add_measurement_trend(status, key, value, baseline, baseline_count):
         "trend_symbol": symbol,
         "trend_label": trend_label
     })
+    if key.endswith("_ohms") and baseline:
+        change_percent = difference / baseline * 100
+        if change_percent > 0:
+            comparison = "above"
+        elif change_percent < 0:
+            comparison = "below"
+        else:
+            comparison = "at"
+        status.update({
+            "baseline_change_pct": round(abs(change_percent), 1),
+            "baseline_comparison": comparison,
+            "baseline_change_label": "{:.1f}% {} the six-hour baseline".format(
+                abs(change_percent), comparison
+            )
+        })
     return status
 
 
@@ -174,13 +236,15 @@ def classify_measurement(key, value, baseline=None, baseline_count=0):
         if baseline_count < 30 or not baseline:
             return {"level": "learning", "label": "Learning baseline"}
 
-        change = abs((value / baseline) - 1)
-        if change <= 0.2:
-            status = {"level": "normal", "label": "Stable trend"}
+        change = abs(value - baseline) / abs(baseline)
+        if change <= 0.05:
+            status = {"level": "normal", "label": "Normal fluctuation"}
+        elif change <= 0.2:
+            status = {"level": "info", "label": "Small change"}
         elif change <= 0.5:
-            status = {"level": "warning", "label": "Changed from baseline"}
+            status = {"level": "warning", "label": "Notable change"}
         else:
-            status = {"level": "warning", "label": "Large trend change"}
+            status = {"level": "warning", "label": "Large change"}
         return add_measurement_trend(
             status, key, value, baseline, baseline_count
         )
@@ -204,6 +268,7 @@ def get_legacy_measurements(reading):
             "precision": precision,
             "format": display_format,
             "order": display_order,
+            "description": get_measurement_description(key, label),
             "status": classify_measurement(key, value),
             "display_value": format_measurement_value(
                 value, unit, precision, display_format
@@ -272,6 +337,9 @@ def add_latest_measurements(readings):
         measurement = dict(row)
         reading_id = measurement.pop("reading_id")
         measurement["order"] = measurement.pop("display_order")
+        measurement["description"] = get_measurement_description(
+            measurement["key"], measurement["label"]
+        )
         measurement["display_value"] = format_measurement_value(
             measurement["value"],
             measurement["unit"],
