@@ -96,6 +96,98 @@ def format_measurement_value(value, unit, precision, display_format):
     )
 
 
+def add_measurement_trend(status, key, value, baseline, baseline_count):
+    minimum_samples = 30 if key.endswith("_ohms") else 3
+    if baseline_count < minimum_samples or baseline is None:
+        return status
+
+    if key == "temperature_c":
+        threshold = 0.5
+    elif key == "humidity_pct":
+        threshold = 2.0
+    elif key == "pressure_hpa":
+        threshold = 0.5
+    elif key.endswith("_ohms"):
+        threshold = abs(baseline) * 0.1
+    else:
+        threshold = max(abs(baseline) * 0.02, 0.01)
+
+    difference = value - baseline
+    if difference > threshold:
+        trend, symbol, trend_label = "up", "↑", "Rising"
+    elif difference < -threshold:
+        trend, symbol, trend_label = "down", "↓", "Falling"
+    else:
+        trend, symbol, trend_label = "steady", "→", "Steady"
+
+    status.update({
+        "trend": trend,
+        "trend_symbol": symbol,
+        "trend_label": trend_label
+    })
+    return status
+
+
+def classify_measurement(key, value, baseline=None, baseline_count=0):
+    if key == "temperature_c":
+        if value < 10:
+            status = {"level": "critical", "label": "Very cold"}
+        elif value < 18:
+            status = {"level": "warning", "label": "Cool"}
+        elif value <= 26:
+            status = {"level": "normal", "label": "Comfortable"}
+        elif value <= 32:
+            status = {"level": "warning", "label": "Warm"}
+        else:
+            status = {"level": "critical", "label": "Hot"}
+        return add_measurement_trend(
+            status, key, value, baseline, baseline_count
+        )
+
+    if key == "humidity_pct":
+        if value < 20:
+            status = {"level": "critical", "label": "Very dry"}
+        elif value < 30:
+            status = {"level": "warning", "label": "Dry"}
+        elif value <= 60:
+            status = {"level": "normal", "label": "Comfortable"}
+        elif value <= 70:
+            status = {"level": "warning", "label": "Humid"}
+        else:
+            status = {"level": "critical", "label": "Very humid"}
+        return add_measurement_trend(
+            status, key, value, baseline, baseline_count
+        )
+
+    if key == "pressure_hpa":
+        if value < 980:
+            status = {"level": "info", "label": "Low pressure"}
+        elif value <= 1035:
+            status = {"level": "normal", "label": "Typical"}
+        else:
+            status = {"level": "info", "label": "High pressure"}
+        return add_measurement_trend(
+            status, key, value, baseline, baseline_count
+        )
+
+    if key.endswith("_ohms"):
+        if baseline_count < 30 or not baseline:
+            return {"level": "learning", "label": "Learning baseline"}
+
+        change = abs((value / baseline) - 1)
+        if change <= 0.2:
+            status = {"level": "normal", "label": "Stable trend"}
+        elif change <= 0.5:
+            status = {"level": "warning", "label": "Changed from baseline"}
+        else:
+            status = {"level": "warning", "label": "Large trend change"}
+        return add_measurement_trend(
+            status, key, value, baseline, baseline_count
+        )
+
+    return {"level": "info", "label": "Current reading"}
+
+
 def get_legacy_measurements(reading):
     definitions = [
         ("temperature_c", "Temperature", reading["temperature_c"], "°C", 2, "temperature", 10),
@@ -112,6 +204,7 @@ def get_legacy_measurements(reading):
             "precision": precision,
             "format": display_format,
             "order": display_order,
+            "status": classify_measurement(key, value),
             "display_value": format_measurement_value(
                 value, unit, precision, display_format
             )
@@ -150,6 +243,29 @@ def add_latest_measurements(readings):
             """.format(placeholders),
             reading_ids
         ).fetchall()
+        baseline_rows = conn.execute(
+            """
+            SELECT
+                r.sensor_id,
+                sm.measurement_key,
+                AVG(sm.measurement_value) AS baseline,
+                COUNT(*) AS baseline_count
+            FROM sensor_measurement AS sm
+            JOIN sensor_reading AS r ON r.reading_id = sm.reading_id
+            WHERE r.reading_id NOT IN ({})
+              AND datetime(replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' '))
+                  >= datetime('now', '-6 hours')
+            GROUP BY r.sensor_id, sm.measurement_key
+            """.format(placeholders),
+            reading_ids
+        ).fetchall()
+
+    baselines = {
+        (row["sensor_id"], row["measurement_key"]): (
+            row["baseline"], row["baseline_count"]
+        )
+        for row in baseline_rows
+    }
 
     measurements_by_reading = {reading_id: [] for reading_id in reading_ids}
     for row in rows:
@@ -168,11 +284,29 @@ def add_latest_measurements(readings):
         measurements = measurements_by_reading[reading["reading_id"]]
         if not measurements:
             measurements = get_legacy_measurements(reading)
+        for measurement in measurements:
+            baseline, baseline_count = baselines.get(
+                (reading["sensor_id"], measurement["key"]),
+                (None, 0)
+            )
+            measurement["status"] = classify_measurement(
+                measurement["key"],
+                measurement["value"],
+                baseline,
+                baseline_count
+            )
         reading["measurements"] = measurements
         reading["secondary_measurements"] = [
             measurement for measurement in measurements
             if measurement["key"] != "temperature_c"
         ]
+        reading["temperature_status"] = next(
+            (
+                measurement["status"] for measurement in measurements
+                if measurement["key"] == "temperature_c"
+            ),
+            classify_measurement("temperature_c", reading["temperature_c"])
+        )
         reading.pop("reading_id")
 
     return readings
@@ -248,12 +382,39 @@ def get_latest_weather():
             LIMIT 1
             """
         ).fetchone()
+        baseline = conn.execute(
+            """
+            SELECT
+                AVG(temperature_c) AS temperature_c,
+                AVG(humidity_pct) AS humidity_pct,
+                AVG(pressure_hpa) AS pressure_hpa,
+                COUNT(*) AS sample_count
+            FROM weather_observation
+            WHERE observation_id NOT IN
+                (SELECT observation_id FROM weather_observation
+                 ORDER BY observed_ts DESC LIMIT 1)
+              AND datetime(observed_ts) >= datetime('now', '-6 hours')
+            """
+        ).fetchone()
 
     if row is None:
         return None
 
     weather = dict(row)
     weather["location_name"] = get_weather_settings()["location_name"]
+    weather["temperature_status"] = classify_measurement(
+        "temperature_c", weather["temperature_c"],
+        baseline["temperature_c"], baseline["sample_count"]
+    )
+    weather["humidity_status"] = classify_measurement(
+        "humidity_pct", weather["humidity_pct"],
+        baseline["humidity_pct"], baseline["sample_count"]
+    )
+    if weather["pressure_hpa"] is not None:
+        weather["pressure_status"] = classify_measurement(
+            "pressure_hpa", weather["pressure_hpa"],
+            baseline["pressure_hpa"], baseline["sample_count"]
+        )
     return weather
 
 

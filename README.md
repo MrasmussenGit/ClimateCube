@@ -31,6 +31,25 @@ oxidising, and NH3-sensitive channels. They are not displayed as ppm because
 reliable concentration values require controlled calibration. Allow the sensor
 heater time to stabilize before interpreting changes.
 
+Dashboard status indicators use these default ranges:
+
+- Temperature: below 10°C very cold, 10-18°C cool, 18-26°C comfortable,
+	26-32°C warm, and above 32°C hot.
+- Relative humidity: below 20% very dry, 20-30% dry, 30-60% comfortable,
+	60-70% humid, and above 70% very humid.
+- Pressure: below 980 hPa low, 980-1035 hPa typical, and above 1035 hPa high.
+	Pressure status describes weather conditions, not a personal safety limit.
+- Gas resistance: learns from 30 prior samples in the last six hours. Changes
+	within 20% are stable, 20-50% are changed, and changes above 50% are large.
+	These are trend indicators, not calibrated gas alarms.
+
+After enough recent samples are available, status chips also show `↑`, `→`, or
+`↓` relative to the prior six-hour average. To avoid arrows changing with normal
+sensor noise, steady dead bands are ±0.5°C for temperature, ±2% for humidity,
+±0.5 hPa for pressure, and ±10% for resistance. A rising pressure arrow commonly
+indicates improving weather, while falling pressure commonly precedes unsettled
+weather; local conditions can differ.
+
 New numeric sensor types use the generic measurement pipeline and do not need
 new database columns or dashboard markup. See `docs/SensorDrivers.md` for the
 driver contract.
