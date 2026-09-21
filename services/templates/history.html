@@ -22,11 +22,20 @@
         .metric-control input { width: 18px; height: 18px; accent-color: var(--button); }
         button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; cursor: pointer; }
         button.active, #unit-button, #theme-button { background: var(--button); color: var(--page); }
-        .chart-card { height: 460px; padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .chart-section { margin-top: 24px; }
+        .chart-section[hidden] { display: none; }
+        .chart-heading { margin: 0 0 12px; }
+        .chart-card { height: 340px; padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .gas-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
+        .gas-chart-card { min-width: 0; padding: 18px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .gas-chart-heading { margin: 0 0 10px; font-size: 18px; }
+        .gas-chart-canvas { height: 240px; }
         .details, .status { color: var(--muted); }
         @media (max-width: 600px) {
             body { padding: 18px; }
-            .chart-card { height: 360px; padding: 12px; }
+            .chart-card { height: 300px; padding: 12px; }
+            .gas-chart-grid { grid-template-columns: 1fr; }
+            .gas-chart-card { padding: 12px; }
         }
     </style>
 </head>
@@ -51,34 +60,42 @@
         <button class="range-button" data-range="7d">7 days</button>
     </div>
 
-    <div class="metric-controls">
+    <div id="environment-controls" class="metric-controls">
         <label class="metric-control">
-            <input type="checkbox" data-dataset="0" checked>
+            <input type="checkbox" data-chart="environment" data-dataset="0" checked>
             Temperature
         </label>
         <label class="metric-control">
-            <input type="checkbox" data-dataset="1">
+            <input type="checkbox" data-chart="environment" data-dataset="1">
             Humidity
         </label>
         <label class="metric-control">
-            <input type="checkbox" data-dataset="2">
+            <input type="checkbox" data-chart="environment" data-dataset="2">
             Pressure
         </label>
         <label class="metric-control">
-            <input type="checkbox" data-dataset="3" checked>
+            <input type="checkbox" data-chart="environment" data-dataset="3" checked>
             Outdoor temperature
         </label>
         <label class="metric-control">
-            <input type="checkbox" data-dataset="4">
+            <input type="checkbox" data-chart="environment" data-dataset="4">
             Outdoor humidity
         </label>
         <label class="metric-control">
-            <input type="checkbox" data-dataset="5">
+            <input type="checkbox" data-chart="environment" data-dataset="5">
             Outdoor dew point
         </label>
     </div>
 
-    <div class="chart-card"><canvas id="temperature-chart"></canvas></div>
+    <section class="chart-section">
+        <h2 class="chart-heading">Environmental conditions</h2>
+        <div class="chart-card"><canvas id="environment-chart"></canvas></div>
+    </section>
+    <section id="gas-section" class="chart-section" hidden>
+        <h2 class="chart-heading">Gas sensor resistance</h2>
+        <p class="details">Each sensor uses its own scale so changes remain visible while tooltips show actual resistance.</p>
+        <div id="gas-charts" class="gas-chart-grid"></div>
+    </section>
     <p id="status" class="status">Loading history...</p>
 
     <script>
@@ -86,16 +103,16 @@
         const themeButton = document.getElementById("theme-button");
         const unitButton = document.getElementById("unit-button");
         const rangeButtons = document.querySelectorAll(".range-button");
-        const metricCheckboxes = document.querySelectorAll(
-            ".metric-control input"
-        );
-        const metricControls = document.querySelector(".metric-controls");
+        const environmentControls = document.getElementById("environment-controls");
+        const gasChartsContainer = document.getElementById("gas-charts");
+        const gasSection = document.getElementById("gas-section");
         const status = document.getElementById("status");
         const timezoneDetails = document.getElementById("timezone-details");
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
         let currentRange = "24h";
         let historyReadings = [];
         let additionalMeasurements = [];
+        let gasCharts = [];
 
         const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timezoneDetails.textContent = "Times shown in " + (timezoneName || "your local timezone");
@@ -139,7 +156,7 @@
             }).format(date);
         }
 
-        const chart = new Chart(document.getElementById("temperature-chart"), {
+        const environmentChart = new Chart(document.getElementById("environment-chart"), {
             type: "line",
             data: {
                 labels: [],
@@ -231,24 +248,18 @@
                         title: { display: true, text: "Pressure (hPa)" },
                         grid: { drawOnChartArea: false }
                     },
-                    resistance: {
-                        type: "logarithmic",
-                        position: "right",
-                        display: false,
-                        title: { display: true, text: "Resistance (Ω)" },
-                        grid: { drawOnChartArea: false }
-                    }
                 }
             }
         });
 
-        function addMeasurementDatasets() {
-            chart.data.datasets.splice(6);
-            metricControls.querySelectorAll(".additional-metric").forEach(function (control) {
-                control.remove();
-            });
+        function addMeasurementCharts() {
+            gasCharts.forEach(function (chart) { chart.destroy(); });
+            gasCharts = [];
+            gasChartsContainer.replaceChildren();
 
-            const definitions = Array.from(new Map(additionalMeasurements.map(function (measurement) {
+            const definitions = Array.from(new Map(additionalMeasurements
+                .filter(function (measurement) { return measurement.format === "resistance"; })
+                .map(function (measurement) {
                 return [measurement.key, measurement];
             })).values());
             const colors = ["#a93226", "#7d3c98", "#117864", "#b9770e", "#2e86c1"];
@@ -257,65 +268,121 @@
                 const values = new Map(additionalMeasurements
                     .filter(function (measurement) { return measurement.key === definition.key; })
                     .map(function (measurement) { return [measurement.reading_time, measurement.value]; }));
-                const datasetIndex = chart.data.datasets.length;
-                chart.data.datasets.push({
-                    label: definition.label,
-                    data: historyReadings.map(function (reading) {
-                        const value = values.get(reading.reading_time);
-                        return value === undefined ? null : Number(value);
-                    }),
-                    borderColor: colors[index % colors.length],
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.15,
-                    spanGaps: true,
-                    hidden: true,
-                    yAxisID: definition.format === "resistance" ? "resistance" : "pressure"
+                const data = historyReadings.map(function (reading) {
+                    const value = values.get(reading.reading_time);
+                    return value === undefined ? null : Number(value);
                 });
+                const numericValues = data.filter(function (value) {
+                    return Number.isFinite(value);
+                });
+                const minimum = numericValues.length ? Math.min.apply(null, numericValues) : 0;
+                const maximum = numericValues.length ? Math.max.apply(null, numericValues) : 0;
+                const spread = maximum - minimum;
+                const padding = spread > 0 ? spread * 0.1 : maximum * 0.02;
 
-                const label = document.createElement("label");
-                label.className = "metric-control additional-metric";
-                const checkbox = document.createElement("input");
-                checkbox.type = "checkbox";
-                checkbox.dataset.dataset = datasetIndex;
-                label.append(checkbox, document.createTextNode(definition.label));
-                metricControls.appendChild(label);
+                const card = document.createElement("article");
+                card.className = "gas-chart-card";
+                const heading = document.createElement("h3");
+                heading.className = "gas-chart-heading";
+                heading.textContent = definition.label;
+                const canvasContainer = document.createElement("div");
+                canvasContainer.className = "gas-chart-canvas";
+                const canvas = document.createElement("canvas");
+                canvasContainer.appendChild(canvas);
+                card.append(heading, canvasContainer);
+                gasChartsContainer.appendChild(card);
+
+                gasCharts.push(new Chart(canvas, {
+                    type: "line",
+                    data: {
+                        labels: historyReadings.map(function (reading) {
+                            return formatLocalTimestamp(reading.reading_time);
+                        }),
+                        datasets: [{
+                            label: definition.label,
+                            data: data,
+                            borderColor: colors[index % colors.length],
+                            backgroundColor: colors[index % colors.length] + "18",
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.15,
+                            spanGaps: true,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: "index" },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function (context) {
+                                        return context.dataset.label + ": " +
+                                            new Intl.NumberFormat().format(context.parsed.y) + " Ω";
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { ticks: { maxTicksLimit: 6 } },
+                            y: {
+                                min: numericValues.length ? Math.max(0, minimum - padding) : undefined,
+                                max: numericValues.length ? maximum + padding : undefined,
+                                title: { display: true, text: "Resistance (Ω)" },
+                                ticks: {
+                                    callback: function (value) {
+                                        return new Intl.NumberFormat(undefined, {
+                                            notation: "compact",
+                                            maximumFractionDigits: 1
+                                        }).format(value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }));
             });
+
+            gasSection.hidden = definitions.length === 0;
         }
 
         function updateChart() {
             const useFahrenheit = temperatureUnit === "F";
-            chart.data.labels = historyReadings.map(function (reading) {
+            const labels = historyReadings.map(function (reading) {
                 return formatLocalTimestamp(reading.reading_time);
             });
-            chart.data.datasets[0].data = historyReadings.map(function (reading) {
+            environmentChart.data.labels = labels;
+            environmentChart.data.datasets[0].data = historyReadings.map(function (reading) {
                 const celsius = Number(reading.temperature_c);
                 return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
             });
-            chart.data.datasets[1].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[1].data = historyReadings.map(function (reading) {
                 return Number(reading.humidity_pct);
             });
-            chart.data.datasets[2].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[2].data = historyReadings.map(function (reading) {
                 return Number(reading.pressure_hpa);
             });
-            chart.data.datasets[3].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[3].data = historyReadings.map(function (reading) {
                 if (reading.outdoor_temperature_c === null) return null;
                 const celsius = Number(reading.outdoor_temperature_c);
                 return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
             });
-            chart.data.datasets[4].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[4].data = historyReadings.map(function (reading) {
                 return reading.outdoor_humidity_pct === null
                     ? null : Number(reading.outdoor_humidity_pct);
             });
-            chart.data.datasets[5].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[5].data = historyReadings.map(function (reading) {
                 if (reading.outdoor_dew_point_c === null) return null;
                 const celsius = Number(reading.outdoor_dew_point_c);
                 return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
             });
-            chart.options.scales.temperature.title.text =
+            environmentChart.options.scales.temperature.title.text =
                 "Temperature (°" + temperatureUnit + ")";
             unitButton.textContent = useFahrenheit ? "Show °C" : "Show °F";
-            chart.update();
+            environmentChart.update();
+            gasCharts.forEach(function (chart) { chart.update(); });
         }
 
         async function loadHistory() {
@@ -328,13 +395,13 @@
                 const result = await response.json();
                 historyReadings = result.readings;
                 additionalMeasurements = result.measurements;
-                addMeasurementDatasets();
+                addMeasurementCharts();
                 updateChart();
                 status.textContent = historyReadings.length
                     ? historyReadings.length + " chart points"
                     : "No readings found for this period.";
             } catch (error) {
-                status.textContent = "Unable to load temperature history.";
+                status.textContent = "Unable to load history.";
             }
         }
 
@@ -350,26 +417,23 @@
         function updateMetricVisibility() {
             document.querySelectorAll(".metric-control input").forEach(function (checkbox) {
                 const datasetIndex = Number(checkbox.dataset.dataset);
-                const dataset = chart.data.datasets[datasetIndex];
+                const dataset = environmentChart.data.datasets[datasetIndex];
                 dataset.hidden = !checkbox.checked;
             });
 
-            Object.keys(chart.options.scales).forEach(function (axisName) {
+            Object.keys(environmentChart.options.scales).forEach(function (axisName) {
                 if (axisName === "x") return;
-                chart.options.scales[axisName].display = chart.data.datasets.some(function (dataset) {
+                environmentChart.options.scales[axisName].display =
+                    environmentChart.data.datasets.some(function (dataset) {
                     return dataset.yAxisID === axisName && !dataset.hidden;
                 });
             });
 
-            chart.update();
+            environmentChart.update();
         }
 
-        metricCheckboxes.forEach(function (checkbox) {
-            checkbox.addEventListener("change", updateMetricVisibility);
-        });
-
-        metricControls.addEventListener("change", function (event) {
-            if (event.target.matches(".additional-metric input")) {
+        environmentControls.addEventListener("change", function (event) {
+            if (event.target.matches(".metric-control input")) {
                 updateMetricVisibility();
             }
         });
@@ -386,7 +450,8 @@
             localStorage.setItem("theme", nextTheme);
             applyChartTheme();
             updateThemeButton();
-            chart.update();
+            environmentChart.update();
+            gasCharts.forEach(function (chart) { chart.update(); });
         });
 
         updateThemeButton();
