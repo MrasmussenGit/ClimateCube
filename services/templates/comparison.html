@@ -61,6 +61,7 @@
         <button class="range-button active" data-range="24h">24 hours</button>
         <button class="range-button" data-range="3d">3 days</button>
         <button class="range-button" data-range="7d">7 days</button>
+        <button id="outlier-button" type="button" aria-pressed="false">Remove outliers</button>
     </div>
     <section class="selector-panel" aria-labelledby="sensor-selector-heading">
         <div class="selector-heading">
@@ -91,6 +92,7 @@
         const clearAllButton = document.getElementById("clear-all-button");
         const themeButton = document.getElementById("theme-button");
         const unitButton = document.getElementById("unit-button");
+        const outlierButton = document.getElementById("outlier-button");
         const rangeButtons = document.querySelectorAll(".range-button");
         const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const selectionStorageKey = "comparisonSeriesSelection";
@@ -98,6 +100,8 @@
         let currentRange = "24h";
         let comparisonData = null;
         let selectedSeries = null;
+        let removeOutliers = false;
+        let filteredOutlierCount = 0;
 
         document.getElementById("timezone-details").textContent =
             "Times shown in " + (timezoneName || "your local timezone");
@@ -133,6 +137,54 @@
             if (celsius === null || celsius === undefined) return null;
             const value = Number(celsius);
             return temperatureUnit === "F" ? (value * 9 / 5) + 32 : value;
+        }
+
+        function filterIsolatedOutliers(values) {
+            if (!removeOutliers) return values;
+
+            const filtered = values.slice();
+            const populatedIndexes = values
+                .map(function (value, index) {
+                    return value === null || value === undefined ? null : index;
+                })
+                .filter(function (index) { return index !== null; });
+
+            for (let position = 1; position < populatedIndexes.length - 1; position += 1) {
+                const previousIndex = populatedIndexes[position - 1];
+                const currentIndex = populatedIndexes[position];
+                const nextIndex = populatedIndexes[position + 1];
+                const previous = Number(values[previousIndex]);
+                const current = Number(values[currentIndex]);
+                const next = Number(values[nextIndex]);
+                const expected = (previous + next) / 2;
+
+                if (Math.abs(current - expected) >= 4 && Math.abs(previous - next) <= 2) {
+                    filtered[currentIndex] = null;
+                    filteredOutlierCount += 1;
+                }
+            }
+
+            return filtered;
+        }
+
+        function updateOutlierButton() {
+            outlierButton.textContent = removeOutliers ? "Show raw data" : "Remove outliers";
+            outlierButton.classList.toggle("active", removeOutliers);
+            outlierButton.setAttribute("aria-pressed", String(removeOutliers));
+        }
+
+        function updateStatus() {
+            if (!comparisonData || !comparisonData.readings.length) {
+                status.textContent = "No indoor readings found for this period.";
+                return;
+            }
+
+            const summary = chart.data.labels.length + " time points across " +
+                (chart.data.datasets.length - 1) + " indoor sensors";
+            status.textContent = removeOutliers
+                ? summary + " · " + filteredOutlierCount + " isolated " +
+                    (filteredOutlierCount === 1 ? "outlier" : "outliers") + " hidden"
+                : summary;
         }
 
         function getStoredSelection() {
@@ -189,6 +241,7 @@
 
         function renderChart() {
             const readings = comparisonData.readings;
+            filteredOutlierCount = 0;
             const labels = Array.from(new Set(readings.map(function (reading) {
                 return reading.reading_time;
             })));
@@ -201,10 +254,11 @@
                 const values = new Map(readings
                     .filter(function (reading) { return reading.sensor_id === sensor[0]; })
                     .map(function (reading) { return [reading.reading_time, reading.temperature_c]; }));
+                const rawValues = labels.map(function (timestamp) { return values.get(timestamp); });
                 return {
                     label: sensor[1],
                     seriesKey: "sensor:" + sensor[0],
-                    data: labels.map(function (timestamp) { return convertTemperature(values.get(timestamp)); }),
+                    data: filterIsolatedOutliers(rawValues).map(convertTemperature),
                     borderColor: palette[index % palette.length],
                     backgroundColor: "transparent",
                     borderWidth: 2,
@@ -218,10 +272,13 @@
             const outdoorValues = new Map(comparisonData.outdoor.map(function (reading) {
                 return [reading.reading_time, reading.outdoor_temperature_c];
             }));
+            const rawOutdoorValues = labels.map(function (timestamp) {
+                return outdoorValues.get(timestamp);
+            });
             datasets.push({
                 label: comparisonData.weather ? comparisonData.weather.location_name : "Outdoor",
                 seriesKey: "outdoor",
-                data: labels.map(function (timestamp) { return convertTemperature(outdoorValues.get(timestamp)); }),
+                data: filterIsolatedOutliers(rawOutdoorValues).map(convertTemperature),
                 borderColor: outdoorColor,
                 backgroundColor: "transparent",
                 borderWidth: 3,
@@ -245,6 +302,8 @@
             unitButton.textContent = temperatureUnit === "F" ? "Show °C" : "Show °F";
             renderSeriesControls();
             updateSelectionSummary();
+            updateOutlierButton();
+            updateStatus();
             chart.update();
         }
 
@@ -288,9 +347,6 @@
                 if (!response.ok) throw new Error("History request failed");
                 comparisonData = await response.json();
                 renderChart();
-                status.textContent = comparisonData.readings.length
-                    ? chart.data.labels.length + " time points across " + (chart.data.datasets.length - 1) + " indoor sensors"
-                    : "No indoor readings found for this period.";
             } catch (error) {
                 status.textContent = "Unable to load temperature comparison.";
             }
@@ -315,6 +371,11 @@
                 selectedSeries = new Set();
                 applySelection();
             });
+
+            outlierButton.addEventListener("click", function () {
+                removeOutliers = !removeOutliers;
+                renderChart();
+            });
         });
 
         unitButton.addEventListener("click", function () {
@@ -333,6 +394,7 @@
         });
 
         updateThemeButton();
+        updateOutlierButton();
         loadHistory();
     </script>
 </body>
