@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -29,34 +29,45 @@ def _mean(values):
     return sum(values) / len(values)
 
 
+def _pearson_pairs(pairs):
+    count = 0
+    left_mean = 0.0
+    right_mean = 0.0
+    left_variation = 0.0
+    right_variation = 0.0
+    co_moment = 0.0
+
+    for left_value, right_value in pairs:
+        count += 1
+        left_delta = left_value - left_mean
+        left_mean += left_delta / count
+        right_delta = right_value - right_mean
+        right_mean += right_delta / count
+        left_variation += left_delta * (left_value - left_mean)
+        right_variation += right_delta * (right_value - right_mean)
+        co_moment += left_delta * (right_value - right_mean)
+
+    denominator = math.sqrt(left_variation * right_variation)
+    correlation = (
+        co_moment / denominator
+        if count >= 3 and denominator
+        else None
+    )
+    return correlation, count
+
+
 def pearson(left, right):
-    pairs = [
+    correlation, _ = _pearson_pairs(
         (float(left_value), float(right_value))
         for left_value, right_value in zip(left, right)
         if _finite(left_value) and _finite(right_value)
-    ]
-
-    if len(pairs) < 3:
-        return None
-
-    left_values, right_values = zip(*pairs)
-    left_mean = _mean(left_values)
-    right_mean = _mean(right_values)
-    numerator = sum(
-        (left_value - left_mean) * (right_value - right_mean)
-        for left_value, right_value in pairs
     )
-    left_variance = sum(
-        (value - left_mean) ** 2
-        for value in left_values
-    )
-    right_variance = sum(
-        (value - right_mean) ** 2
-        for value in right_values
-    )
-    denominator = math.sqrt(left_variance * right_variance)
+    return correlation
 
-    return numerator / denominator if denominator else None
+
+def _pearson_clean(left, right):
+    correlation, _ = _pearson_pairs(zip(left, right))
+    return correlation
 
 
 def _ranks(values):
@@ -87,22 +98,25 @@ def spearman(left, right):
         return None
 
     left_values, right_values = zip(*pairs)
-    return pearson(_ranks(left_values), _ranks(right_values))
+    return _pearson_clean(_ranks(left_values), _ranks(right_values))
 
 
-def _changes(observations, side, metric):
+def _changes(observations, timestamps, side, metric):
     changes = {}
     previous = None
 
-    for observation in observations:
+    for observation, timestamp in zip(observations, timestamps):
         values = observation.get(side)
         value = values.get(metric) if values else None
-        timestamp = datetime.fromisoformat(observation["reading_time"])
 
         if _finite(value) and previous is not None:
             previous_time, previous_value = previous
             if (timestamp - previous_time).total_seconds() <= 1800:
-                changes[timestamp] = float(value) - previous_value
+                bucket = int(
+                    timestamp.replace(tzinfo=timezone.utc).timestamp()
+                    // (15 * 60)
+                )
+                changes[bucket] = float(value) - previous_value
         if _finite(value):
             previous = (timestamp, float(value))
         else:
@@ -111,24 +125,49 @@ def _changes(observations, side, metric):
     return changes
 
 
-def _lag_analysis(observations, indoor_metric, outdoor_metric):
-    indoor_changes = _changes(observations, "indoor", indoor_metric)
-    outdoor_changes = _changes(observations, "outdoor", outdoor_metric)
+def _dense_changes(changes, first_bucket, bucket_count):
+    values = [None] * bucket_count
+    for bucket, value in changes.items():
+        values[bucket - first_bucket] = value
+    return values
+
+
+def _lag_analysis(indoor_changes, outdoor_changes):
     best = None
 
     for lag_minutes in LAG_MINUTES:
-        lag_seconds = lag_minutes * 60
-        indoor_values = []
-        outdoor_values = []
+        lag_buckets = lag_minutes // 15
+        sample_count = 0
+        outdoor_sum = 0.0
+        indoor_sum = 0.0
+        outdoor_squared_sum = 0.0
+        indoor_squared_sum = 0.0
+        product_sum = 0.0
 
-        for indoor_time, indoor_value in indoor_changes.items():
-            outdoor_time = indoor_time - timedelta(seconds=lag_seconds)
-            if outdoor_time in outdoor_changes:
-                indoor_values.append(indoor_value)
-                outdoor_values.append(outdoor_changes[outdoor_time])
+        for outdoor_index in range(len(outdoor_changes) - lag_buckets):
+            outdoor_value = outdoor_changes[outdoor_index]
+            indoor_value = indoor_changes[outdoor_index + lag_buckets]
+            if outdoor_value is None or indoor_value is None:
+                continue
+            sample_count += 1
+            outdoor_sum += outdoor_value
+            indoor_sum += indoor_value
+            outdoor_squared_sum += outdoor_value * outdoor_value
+            indoor_squared_sum += indoor_value * indoor_value
+            product_sum += outdoor_value * indoor_value
 
-        correlation = pearson(outdoor_values, indoor_values)
-        sample_count = len(indoor_values)
+        numerator = sample_count * product_sum - outdoor_sum * indoor_sum
+        denominator = math.sqrt(
+            max(
+                0.0,
+                sample_count * outdoor_squared_sum - outdoor_sum ** 2
+            )
+            * max(
+                0.0,
+                sample_count * indoor_squared_sum - indoor_sum ** 2
+            )
+        )
+        correlation = numerator / denominator if denominator else None
 
         if (
             correlation is not None
@@ -314,6 +353,43 @@ def analyze_correlations(dataset, timezone_name="UTC"):
         timezone_name = "UTC"
         timezone_info = timezone.utc
 
+    timestamps = [
+        datetime.fromisoformat(observation["reading_time"])
+        for observation in observations
+    ]
+    indoor_change_maps = {
+        metric: _changes(observations, timestamps, "indoor", metric)
+        for metric in dataset["indoor_metrics"]
+    }
+    outdoor_change_maps = {
+        metric: _changes(observations, timestamps, "outdoor", metric)
+        for metric in OUTDOOR_METRICS
+    }
+    populated_change_maps = [
+        changes
+        for changes in (
+            list(indoor_change_maps.values())
+            + list(outdoor_change_maps.values())
+        )
+        if changes
+    ]
+    first_bucket = min(
+        (min(changes) for changes in populated_change_maps),
+        default=0
+    )
+    final_bucket = max(
+        (max(changes) for changes in populated_change_maps),
+        default=-1
+    )
+    bucket_count = max(0, final_bucket - first_bucket + 1)
+    indoor_change_cache = {
+        metric: _dense_changes(changes, first_bucket, bucket_count)
+        for metric, changes in indoor_change_maps.items()
+    }
+    outdoor_change_cache = {
+        metric: _dense_changes(changes, first_bucket, bucket_count)
+        for metric, changes in outdoor_change_maps.items()
+    }
     relationships = []
 
     for indoor_key, indoor_definition in dataset["indoor_metrics"].items():
@@ -335,22 +411,18 @@ def analyze_correlations(dataset, timezone_name="UTC"):
 
             x_values = [point["x"] for point in points]
             y_values = [point["y"] for point in points]
-            indoor_changes = _changes(observations, "indoor", indoor_key)
-            outdoor_changes = _changes(observations, "outdoor", outdoor_key)
-            common_change_times = sorted(
-                set(indoor_changes) & set(outdoor_changes)
-            )
+            indoor_changes = indoor_change_cache[indoor_key]
+            outdoor_changes = outdoor_change_cache[outdoor_key]
             change_correlation = pearson(
-                [outdoor_changes[timestamp] for timestamp in common_change_times],
-                [indoor_changes[timestamp] for timestamp in common_change_times]
+                outdoor_changes,
+                indoor_changes
             )
-            lag = _lag_analysis(
-                observations,
-                indoor_key,
-                outdoor_key
+            lag = _lag_analysis(indoor_changes, outdoor_changes)
+            correlation = _pearson_clean(x_values, y_values)
+            rank_correlation = _pearson_clean(
+                _ranks(x_values),
+                _ranks(y_values)
             )
-            correlation = pearson(x_values, y_values)
-            rank_correlation = spearman(x_values, y_values)
 
             if (
                 correlation is None
