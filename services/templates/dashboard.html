@@ -67,6 +67,9 @@
         .source-status::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 50%; background: #2e9d62; }
         .history-link { display: inline-block; margin-top: 18px; color: var(--text); font-weight: bold; text-decoration: none; }
         .history-link:hover { text-decoration: underline; }
+        .sensor-actions { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; }
+        .sensor-actions .history-link { margin-top: 0; }
+        .insights-link { color: var(--info); }
         .source-link { color: var(--text); font-weight: bold; text-decoration: none; }
         .source-link:hover { text-decoration: underline; }
         .storage-warning { margin-top: 24px; padding: 14px 16px; border: 1px solid var(--warning-border); border-left-width: 5px; border-radius: 6px; background: var(--warning-bg); color: var(--warning-text); font-weight: bold; }
@@ -232,9 +235,14 @@
                     >
                         Checking sensor status…
                     </div>
-                    <a class="history-link" href="{{ url_for('history', sensor_id=reading.sensor_id) }}">
-                        View temperature history →
-                    </a>
+                    <div class="sensor-actions">
+                        <a class="history-link" href="{{ url_for('history', sensor_id=reading.sensor_id) }}">
+                            View sensor history →
+                        </a>
+                        <a class="history-link insights-link" href="{{ url_for('insights', sensor_id=reading.sensor_id) }}">
+                            View insights →
+                        </a>
+                    </div>
                 </section>
             {% endfor %}
         </div>

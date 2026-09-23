@@ -17,6 +17,8 @@
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         .header-actions { display: flex; gap: 8px; }
         .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        .button-link { padding: 10px 16px; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; font-weight: normal; text-decoration: none; }
+        .button-link:hover { background: var(--button); color: var(--page); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
         .outlier-control { position: relative; display: flex; }
         .outlier-control #outlier-button { padding-right: 42px; }
@@ -48,8 +50,6 @@
 </head>
 <body>
     <a class="back-link" href="{{ url_for('dashboard') }}">← Current readings</a>
-    <span aria-hidden="true"> · </span>
-    <a class="back-link" href="{{ url_for('insights', sensor_id=sensor.sensor_id) }}">Correlation insights →</a>
     <div class="header">
         <div>
             <h1>{{ sensor.sensor_name }}</h1>
@@ -57,6 +57,7 @@
             <p id="timezone-details" class="details"></p>
         </div>
         <div class="header-actions">
+            <a class="button-link" href="{{ url_for('insights', sensor_id=sensor.sensor_id) }}">View insights</a>
             <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
             <button id="unit-button" type="button">Show °F</button>
         </div>
