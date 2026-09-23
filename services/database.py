@@ -119,23 +119,41 @@ MEASUREMENT_DESCRIPTIONS = {
         "can precede unsettled weather."
     ),
     "bme688_gas_resistance_ohms": (
-        "BME688 gas resistance reflects how the sensor's heated surface "
-        "responds to volatile gases. Use changes as an air-quality trend, "
-        "not as a gas concentration or safety alarm."
+        "The BME688 is a broad air-quality sensor. Its heated sensing surface "
+        "changes electrical resistance when exposed to mixtures of volatile "
+        "organic compounds and other gases, but it cannot identify a specific "
+        "chemical or report a concentration. Cooking, cleaners, fragrances, "
+        "humidity, temperature, and sensor warm-up can all move the reading. "
+        "Treat departures from this sensor's own normal baseline as relative "
+        "air-quality clues only. This is not a smoke, carbon-monoxide, natural-"
+        "gas, or life-safety alarm."
     ),
     "mics6814_reducing_ohms": (
-        "Reducing-gas resistance responds to gases such as carbon monoxide, "
-        "hydrogen, and some volatile organic compounds. It shows relative "
-        "change, not a calibrated concentration or safety alarm."
+        "The MiCS-6814 reducing channel can respond to carbon monoxide, "
+        "hydrogen, ethanol, and other reducing gases. It is cross-sensitive, "
+        "so this graph cannot identify which gas caused a change or convert "
+        "resistance into a trustworthy ppm concentration without controlled "
+        "calibration and environmental compensation. Carbon monoxide can be "
+        "deadly, but this channel must never replace a listed carbon-monoxide "
+        "alarm. Use it only for relative comparisons with this sensor's own "
+        "baseline."
     ),
     "mics6814_oxidising_ohms": (
-        "Oxidising-gas resistance responds to gases such as nitrogen dioxide. "
-        "It shows relative change, not a calibrated concentration or safety alarm."
+        "The MiCS-6814 oxidising channel is sensitive to oxidising gases such "
+        "as nitrogen dioxide and can also react to other chemicals and changing "
+        "environmental conditions. Nitrogen dioxide can irritate and damage "
+        "the respiratory system, but resistance alone does not establish a "
+        "gas identity or safe exposure level. Use changes relative to this "
+        "sensor's normal baseline for investigation, not as a safety alarm."
     ),
     "mics6814_nh3_ohms": (
-        "The NH3-sensitive resistance channel responds strongly to ammonia "
-        "and can also respond to other gases. It shows relative change, not "
-        "a calibrated concentration or safety alarm."
+        "The MiCS-6814 NH3 channel is designed to respond strongly to ammonia, "
+        "but it is also cross-sensitive to other gases and affected by its "
+        "environment. Ammonia can irritate or burn the eyes, skin, and lungs "
+        "at hazardous concentrations; this resistance reading cannot determine "
+        "that concentration or confirm safety. Use only relative changes from "
+        "this sensor's own baseline and rely on appropriate calibrated detectors "
+        "for exposure or emergency decisions."
     )
 }
 
@@ -725,7 +743,17 @@ def get_additional_measurement_history(sensor_id, range_name):
             (sensor_id, sensor_id, modifier, bucket_seconds)
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    measurements = []
+
+    for row in rows:
+        measurement = dict(row)
+        measurement["description"] = get_measurement_description(
+            measurement["key"],
+            measurement["label"]
+        )
+        measurements.append(measurement)
+
+    return measurements
 
 
 def get_temperature_comparison(range_name):

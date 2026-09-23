@@ -11,8 +11,8 @@
             (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     </script>
     <style>
-        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --selected-border: #6aa3cf; }
-        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --selected-border: #6aa3cf; }
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --selected-border: #6aa3cf; --warning-bg: #fff4e5; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --selected-border: #6aa3cf; --warning-bg: #3b2915; }
         body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         .header-actions { display: flex; gap: 8px; }
@@ -37,7 +37,13 @@
         .chart-card { height: 340px; padding: 22px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
         .gas-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
         .gas-chart-card { min-width: 0; padding: 18px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
-        .gas-chart-heading { margin: 0 0 10px; font-size: 18px; }
+        .gas-chart-heading { position: relative; display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 18px; }
+        .gas-help { position: relative; display: inline-flex; }
+        .gas-help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; color: var(--muted); font: bold 11px/1 Arial, sans-serif; cursor: help; }
+        .gas-help-button:hover, .gas-help-button:focus-visible { border-color: var(--text); color: var(--text); outline: 2px solid var(--selected-border); outline-offset: 2px; }
+        .gas-help-text { position: absolute; z-index: 30; bottom: calc(100% + 9px); left: -8px; box-sizing: border-box; width: min(390px, calc(100vw - 60px)); padding: 11px 13px; border: 1px solid var(--control); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.45; visibility: hidden; opacity: 0; pointer-events: none; }
+        .gas-help-button:hover + .gas-help-text, .gas-help-button:focus + .gas-help-text { visibility: visible; opacity: 1; }
+        .gas-safety { max-width: 1050px; padding: 11px 13px; border-left: 4px solid #d97706; border-radius: 6px; background: var(--warning-bg); color: var(--text); font-size: 13px; line-height: 1.45; }
         .gas-chart-canvas { height: 240px; }
         .details, .status { color: var(--muted); }
         @media (max-width: 600px) {
@@ -113,7 +119,8 @@
     </section>
     <section id="gas-section" class="chart-section" hidden>
         <h2 class="chart-heading">Gas sensor resistance</h2>
-        <p class="details">Each sensor uses its own scale so changes remain visible while tooltips show actual resistance.</p>
+        <p class="gas-safety"><strong>Trend information only—not a safety monitor.</strong> These charts show relative electrical-resistance changes, not gas identity or concentration. A normal-looking graph does not prove the air is safe. Keep certified smoke and carbon-monoxide alarms installed, and leave the area or contact emergency services if an alarm sounds, people have symptoms, or you suspect a dangerous release.</p>
+        <p class="details">Each channel uses its own scale so changes remain visible. Select the information icon beside a chart title for sensor-specific interpretation.</p>
         <div id="gas-charts" class="gas-chart-grid"></div>
     </section>
     <p id="status" class="status">Loading history...</p>
@@ -333,7 +340,25 @@
                 card.className = "gas-chart-card";
                 const heading = document.createElement("h3");
                 heading.className = "gas-chart-heading";
-                heading.textContent = definition.label;
+                const headingText = document.createElement("span");
+                headingText.textContent = definition.label;
+                const help = document.createElement("span");
+                help.className = "gas-help";
+                const helpButton = document.createElement("button");
+                helpButton.className = "gas-help-button";
+                helpButton.type = "button";
+                helpButton.textContent = "i";
+                helpButton.setAttribute("aria-label", "Explain " + definition.label);
+                const helpText = document.createElement("span");
+                const helpId = "gas-help-" + definition.key;
+                helpText.id = helpId;
+                helpText.className = "gas-help-text";
+                helpText.setAttribute("role", "tooltip");
+                helpText.textContent = definition.description ||
+                    "This chart shows relative electrical resistance changes from a gas sensor. It does not identify a gas, measure a calibrated concentration, or replace a safety alarm.";
+                helpButton.setAttribute("aria-describedby", helpId);
+                help.append(helpButton, helpText);
+                heading.append(headingText, help);
                 const canvasContainer = document.createElement("div");
                 canvasContainer.className = "gas-chart-canvas";
                 const canvas = document.createElement("canvas");
