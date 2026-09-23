@@ -87,6 +87,13 @@ history view to hide isolated spikes independently across every charted
 measurement without deleting stored sensor readings; **Show raw data** restores
 every point.
 
+Each sensor history page links to **Correlation insights**, which aligns
+15-minute indoor and outdoor observations over 7, 30, or 90 days. The analysis
+reports Pearson and Spearman correlations, correlations between consecutive
+changes, outdoor-leading response lags, repeating time-of-day effects,
+scatterplots, data coverage, and reliability warnings. These are exploratory
+associations rather than proof of causation.
+
 Open-Meteo does not require an account or API key for non-commercial use within
 its published usage limits. Review its current licence and pricing before using
 ClimateCube commercially.

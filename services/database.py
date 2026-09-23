@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from bisect import bisect_left
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,14 @@ HISTORY_RANGES = {
     "3d": ("-3 days", 900),
     "7d": ("-7 days", 1800)
 }
+
+INSIGHT_RANGES = {
+    "7d": "-7 days",
+    "30d": "-30 days",
+    "90d": "-90 days"
+}
+
+INSIGHT_BUCKET_SECONDS = 900
 
 
 def get_connection():
@@ -814,3 +823,230 @@ def add_outdoor_comparison(readings):
         reading["outdoor_dew_point_c"] = nearest["dew_point_c"]
 
     return readings
+
+
+def get_correlation_observations(sensor_id, range_name):
+        modifier = INSIGHT_RANGES[range_name]
+        ensure_weather_schema()
+        ensure_measurement_schema()
+
+        with get_connection() as conn:
+            indoor_rows = conn.execute(
+                """
+                WITH latest AS
+                (
+                    SELECT MAX(COALESCE(pico_ts, insert_ts)) AS latest_ts
+                    FROM sensor_reading
+                    WHERE sensor_id = ?
+                ), bucketed AS
+                (
+                    SELECT
+                        CAST(
+                            strftime(
+                                '%s',
+                                replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                            ) AS INTEGER
+                        ) / ? AS bucket,
+                        AVG(r.temperature_c) AS temperature_c,
+                        AVG(r.humidity_pct) AS humidity_pct,
+                        AVG(r.pressure_hpa) AS pressure_hpa
+                    FROM sensor_reading AS r
+                    CROSS JOIN latest
+                    WHERE r.sensor_id = ?
+                      AND datetime(
+                            replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                          ) >= datetime(
+                            replace(latest.latest_ts, 'T', ' '), ?
+                          )
+                    GROUP BY bucket
+                )
+                SELECT
+                    datetime(bucket * ?, 'unixepoch') AS reading_time,
+                    temperature_c,
+                    humidity_pct,
+                    pressure_hpa
+                FROM bucketed
+                ORDER BY reading_time
+                """,
+                (
+                    sensor_id,
+                    INSIGHT_BUCKET_SECONDS,
+                    sensor_id,
+                    modifier,
+                    INSIGHT_BUCKET_SECONDS
+                )
+            ).fetchall()
+
+            measurement_rows = conn.execute(
+                """
+                WITH latest AS
+                (
+                    SELECT MAX(COALESCE(pico_ts, insert_ts)) AS latest_ts
+                    FROM sensor_reading
+                    WHERE sensor_id = ?
+                ), bucketed AS
+                (
+                    SELECT
+                        CAST(
+                            strftime(
+                                '%s',
+                                replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                            ) AS INTEGER
+                        ) / ? AS bucket,
+                        sm.measurement_key AS key,
+                        md.label,
+                        md.unit,
+                        md.display_order,
+                        AVG(sm.measurement_value) AS value
+                    FROM sensor_measurement AS sm
+                    JOIN sensor_reading AS r ON r.reading_id = sm.reading_id
+                    JOIN measurement_definition AS md
+                        ON md.measurement_key = sm.measurement_key
+                    CROSS JOIN latest
+                    WHERE r.sensor_id = ?
+                      AND sm.measurement_key NOT IN
+                          ('temperature_c', 'humidity_pct', 'pressure_hpa')
+                      AND datetime(
+                            replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                          ) >= datetime(
+                            replace(latest.latest_ts, 'T', ' '), ?
+                          )
+                    GROUP BY bucket, sm.measurement_key
+                )
+                SELECT
+                    datetime(bucket * ?, 'unixepoch') AS reading_time,
+                    key,
+                    label,
+                    unit,
+                    display_order,
+                    value
+                FROM bucketed
+                ORDER BY display_order, reading_time
+                """,
+                (
+                    sensor_id,
+                    INSIGHT_BUCKET_SECONDS,
+                    sensor_id,
+                    modifier,
+                    INSIGHT_BUCKET_SECONDS
+                )
+            ).fetchall()
+
+            if indoor_rows:
+                weather_rows = conn.execute(
+                    """
+                    SELECT
+                        observed_ts,
+                        temperature_c,
+                        humidity_pct,
+                        dew_point_c,
+                        pressure_hpa,
+                        precipitation_mm,
+                        wind_speed_kmh,
+                        cloud_cover_pct
+                    FROM weather_observation
+                    WHERE datetime(observed_ts)
+                        BETWEEN datetime(?, '-30 minutes')
+                            AND datetime(?, '+30 minutes')
+                    ORDER BY observed_ts
+                    """,
+                    (
+                        indoor_rows[0]["reading_time"],
+                        indoor_rows[-1]["reading_time"]
+                    )
+                ).fetchall()
+            else:
+                weather_rows = []
+
+        indoor_metrics = {
+            "temperature_c": {
+                "label": "Indoor temperature",
+                "unit": "°C",
+                "display_order": 10
+            },
+            "humidity_pct": {
+                "label": "Indoor humidity",
+                "unit": "%",
+                "display_order": 20
+            },
+            "pressure_hpa": {
+                "label": "Indoor pressure",
+                "unit": "hPa",
+                "display_order": 30
+            }
+        }
+        measurements_by_time = {}
+
+        for row in measurement_rows:
+            key = row["key"]
+            indoor_metrics[key] = {
+                "label": row["label"],
+                "unit": row["unit"],
+                "display_order": row["display_order"]
+            }
+            measurements_by_time.setdefault(row["reading_time"], {})[key] = row["value"]
+
+        weather = [dict(row) for row in weather_rows]
+        weather_times = [
+            datetime.fromisoformat(row["observed_ts"])
+            for row in weather
+        ]
+        observations = []
+
+        for row in indoor_rows:
+            reading_time = datetime.fromisoformat(row["reading_time"])
+            insertion_point = bisect_left(weather_times, reading_time)
+            candidate_indexes = (
+                insertion_point - 1,
+                insertion_point
+            )
+            nearest = min(
+                (
+                    weather[index]
+                    for index in candidate_indexes
+                    if 0 <= index < len(weather)
+                ),
+                key=lambda item: abs(
+                    datetime.fromisoformat(item["observed_ts"]) - reading_time
+                ),
+                default=None
+            )
+            outdoor = None
+
+            if nearest is not None and abs(
+                datetime.fromisoformat(nearest["observed_ts"]) - reading_time
+            ).total_seconds() <= 1800:
+                outdoor = {
+                    key: nearest[key]
+                    for key in (
+                        "temperature_c",
+                        "humidity_pct",
+                        "dew_point_c",
+                        "pressure_hpa",
+                        "precipitation_mm",
+                        "wind_speed_kmh",
+                        "cloud_cover_pct"
+                    )
+                }
+
+            indoor = {
+                "temperature_c": row["temperature_c"],
+                "humidity_pct": row["humidity_pct"],
+                "pressure_hpa": row["pressure_hpa"]
+            }
+            indoor.update(measurements_by_time.get(row["reading_time"], {}))
+            observations.append({
+                "reading_time": row["reading_time"],
+                "indoor": indoor,
+                "outdoor": outdoor
+            })
+
+        return {
+            "observations": observations,
+            "indoor_metrics": indoor_metrics,
+            "sensor_bucket_count": len(indoor_rows),
+            "aligned_bucket_count": sum(
+                observation["outdoor"] is not None
+                for observation in observations
+            )
+        }

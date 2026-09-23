@@ -1,5 +1,6 @@
 import os
 import socket
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import (
     Flask,
@@ -13,10 +14,13 @@ from flask import (
 
 try:
     from .geocoding import ZipLookupError, lookup_us_zip
+    from .insights import analyze_correlations
     from .database import (
         DB_FILE,
         HISTORY_RANGES,
+        INSIGHT_RANGES,
         add_outdoor_comparison,
+        get_correlation_observations,
         get_latest_readings,
         get_latest_weather,
         get_hidden_sensor_count,
@@ -32,10 +36,13 @@ try:
     )
 except ImportError:
     from geocoding import ZipLookupError, lookup_us_zip
+    from insights import analyze_correlations
     from database import (
         DB_FILE,
         HISTORY_RANGES,
+        INSIGHT_RANGES,
         add_outdoor_comparison,
+        get_correlation_observations,
         get_latest_readings,
         get_latest_weather,
         get_hidden_sensor_count,
@@ -284,6 +291,19 @@ def history(sensor_id):
     )
 
 
+@app.route("/insights/<int:sensor_id>")
+def insights(sensor_id):
+    sensor = get_sensor(sensor_id)
+
+    if sensor is None:
+        abort(404)
+
+    return render_template(
+        "insights.html",
+        sensor=sensor
+    )
+
+
 @app.route("/history")
 def temperature_comparison():
     return render_template("comparison.html")
@@ -312,6 +332,40 @@ def temperature_comparison_api():
         "readings": readings,
         "outdoor": outdoor,
         "weather": get_latest_weather()
+    })
+
+
+@app.route("/api/insights/<int:sensor_id>")
+def insights_api(sensor_id):
+    sensor = get_sensor(sensor_id)
+
+    if sensor is None:
+        abort(404)
+
+    range_name = request.args.get("range", "30d")
+
+    if range_name not in INSIGHT_RANGES:
+        return jsonify({
+            "error": "Invalid range",
+            "valid_ranges": list(INSIGHT_RANGES)
+        }), 400
+
+    timezone_name = request.args.get("timezone", "UTC")
+
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return jsonify({
+            "error": "Invalid timezone"
+        }), 400
+
+    dataset = get_correlation_observations(sensor_id, range_name)
+    analysis = analyze_correlations(dataset, timezone_name)
+
+    return jsonify({
+        "sensor": sensor,
+        "range": range_name,
+        **analysis
     })
 
 

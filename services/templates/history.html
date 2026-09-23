@@ -48,10 +48,12 @@
 </head>
 <body>
     <a class="back-link" href="{{ url_for('dashboard') }}">← Current readings</a>
+    <span aria-hidden="true"> · </span>
+    <a class="back-link" href="{{ url_for('insights', sensor_id=sensor.sensor_id) }}">Correlation insights →</a>
     <div class="header">
         <div>
             <h1>{{ sensor.sensor_name }}</h1>
-            <p class="details">Temperature history · {{ sensor.device_id }}</p>
+            <p class="details">Sensor history · {{ sensor.device_id }}</p>
             <p id="timezone-details" class="details"></p>
         </div>
         <div class="header-actions">

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ sensor.sensor_name }} Insights</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
+    <style>
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --positive: #18794e; --negative: #b42318; --warning: #8a6500; --warning-bg: #fff4e5; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --positive: #70d6a0; --negative: #ff9b91; --warning: #ffd38a; --warning-bg: #3b2915; }
+        body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; }
+        .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+        .header-actions, .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+        .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        h1 { margin-bottom: 6px; }
+        .details, .status, .method-note { color: var(--muted); }
+        button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; cursor: pointer; }
+        button.active, #theme-button { background: var(--button); color: var(--page); }
+        .controls { margin: 24px 0; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+        .summary-card, .panel, .scatter-card { background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .summary-card { padding: 18px; }
+        .summary-label { color: var(--muted); font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.04em; }
+        .summary-value { margin-top: 8px; font-size: 25px; font-weight: bold; }
+        .summary-detail { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+        .panel { margin-top: 20px; padding: 20px; }
+        .panel h2 { margin-top: 0; }
+        .scatter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+        .scatter-card { min-width: 0; padding: 16px; }
+        .scatter-card h3 { margin: 0; font-size: 17px; }
+        .scatter-meta { margin: 5px 0 12px; color: var(--muted); font-size: 13px; }
+        .scatter-canvas { height: 260px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 10px 9px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+        th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+        th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .positive { color: var(--positive); }
+        .negative { color: var(--negative); }
+        .warning-list { margin-bottom: 0; padding-left: 22px; color: var(--warning); }
+        .warning-list li { margin: 9px 0; line-height: 1.4; }
+        .method-note { line-height: 1.5; }
+        [hidden] { display: none !important; }
+        @media (max-width: 650px) {
+            body { padding: 18px; }
+            .header { flex-direction: column; }
+            .scatter-grid { grid-template-columns: 1fr; }
+            .scatter-card { padding: 12px; }
+            .scatter-canvas { height: 230px; }
+        }
+    </style>
+</head>
+<body>
+    <a class="back-link" href="{{ url_for('history', sensor_id=sensor.sensor_id) }}">← {{ sensor.sensor_name }} history</a>
+    <div class="header">
+        <div>
+            <h1>{{ sensor.sensor_name }} insights</h1>
+            <p class="details">Explore outdoor influence, delayed response, and repeating daily patterns.</p>
+            <p id="timezone-details" class="details"></p>
+        </div>
+        <div class="header-actions">
+            <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
+        </div>
+    </div>
+
+    <div class="controls" aria-label="Analysis period">
+        <button class="range-button" data-range="7d">7 days</button>
+        <button class="range-button active" data-range="30d">30 days</button>
+        <button class="range-button" data-range="90d">90 days</button>
+    </div>
+
+    <p id="status" class="status">Loading correlation analysis...</p>
+
+    <section id="results" hidden>
+        <div class="summary-grid">
+            <article class="summary-card">
+                <div class="summary-label">Outdoor data coverage</div>
+                <div id="coverage-value" class="summary-value">—</div>
+                <div id="coverage-detail" class="summary-detail"></div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-label">Strongest changing relationship</div>
+                <div id="relationship-value" class="summary-value">—</div>
+                <div id="relationship-detail" class="summary-detail"></div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-label">Estimated response delay</div>
+                <div id="lag-value" class="summary-value">—</div>
+                <div id="lag-detail" class="summary-detail"></div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-label">Strongest daily pattern</div>
+                <div id="daily-value" class="summary-value">—</div>
+                <div id="daily-detail" class="summary-detail"></div>
+            </article>
+        </div>
+
+        <section class="panel">
+            <h2>Leading relationships</h2>
+            <p class="method-note">Scatterplots show observed levels. The table also reports correlation between consecutive changes (Δr), which is less vulnerable to two unrelated series sharing a smooth daily trend.</p>
+            <div id="scatter-grid" class="scatter-grid"></div>
+        </section>
+
+        <section class="panel">
+            <h2>All indoor/outdoor relationships</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Indoor metric</th>
+                            <th>Outdoor metric</th>
+                            <th>Pearson r</th>
+                            <th>Spearman ρ</th>
+                            <th>Change Δr</th>
+                            <th>Best outdoor lead</th>
+                            <th>Samples</th>
+                        </tr>
+                    </thead>
+                    <tbody id="relationship-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Time-of-day effects</h2>
+            <p class="method-note">A 24-hour sine/cosine model estimates how much variation follows a repeating daily cycle. R² is descriptive, not proof that time itself causes the change.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Indoor metric</th>
+                            <th>Daily-cycle R²</th>
+                            <th>Typical amplitude</th>
+                            <th>Estimated peak time</th>
+                            <th>Samples</th>
+                        </tr>
+                    </thead>
+                    <tbody id="daily-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Reliability and interpretation</h2>
+            <ul id="warning-list" class="warning-list"></ul>
+        </section>
+    </section>
+
+    <script>
+        const sensorId = {{ sensor.sensor_id }};
+        const status = document.getElementById("status");
+        const results = document.getElementById("results");
+        const themeButton = document.getElementById("theme-button");
+        const rangeButtons = document.querySelectorAll(".range-button");
+        const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        const scatterGrid = document.getElementById("scatter-grid");
+        const relationshipBody = document.getElementById("relationship-body");
+        const dailyBody = document.getElementById("daily-body");
+        const warningList = document.getElementById("warning-list");
+        let currentRange = "30d";
+        let scatterCharts = [];
+
+        document.getElementById("timezone-details").textContent =
+            "Daily patterns use " + timezoneName + " local time.";
+
+        function applyChartTheme() {
+            const styles = getComputedStyle(document.documentElement);
+            Chart.defaults.color = styles.getPropertyValue("--muted").trim();
+            Chart.defaults.borderColor = styles.getPropertyValue("--grid").trim();
+        }
+
+        function updateThemeButton() {
+            const dark = document.documentElement.dataset.theme === "dark";
+            themeButton.textContent = dark ? "Light mode" : "Dark mode";
+            themeButton.setAttribute("aria-pressed", String(dark));
+        }
+
+        function formatCorrelation(value) {
+            return value === null || value === undefined ? "—" : Number(value).toFixed(2);
+        }
+
+        function formatHour(hour) {
+            if (hour === null || hour === undefined) return "—";
+            const totalMinutes = Math.round(Number(hour) * 60);
+            const date = new Date(2000, 0, 1, Math.floor(totalMinutes / 60) % 24, totalMinutes % 60);
+            return new Intl.DateTimeFormat(undefined, {
+                hour: "numeric",
+                minute: "2-digit"
+            }).format(date);
+        }
+
+        function formatLag(minutes) {
+            if (minutes === null || minutes === undefined) return "—";
+            if (minutes === 0) return "No delay";
+            if (minutes < 60) return minutes + " min";
+            const hours = minutes / 60;
+            return Number.isInteger(hours) ? hours + " hr" : hours.toFixed(1) + " hr";
+        }
+
+        function correlationClass(value) {
+            if (value === null || value === undefined || value === 0) return "";
+            return value > 0 ? "positive" : "negative";
+        }
+
+        function appendCell(row, text, className) {
+            const cell = document.createElement("td");
+            cell.textContent = text;
+            if (className) cell.className = className;
+            row.appendChild(cell);
+        }
+
+        function renderSummary(data) {
+            const strongest = data.relationships.find(function (relationship) {
+                return relationship.change_correlation !== null;
+            });
+            const strongestLag = data.relationships
+                .filter(function (relationship) { return relationship.lag; })
+                .sort(function (left, right) {
+                    return Math.abs(right.lag.correlation) - Math.abs(left.lag.correlation);
+                })[0];
+            const daily = data.daily_patterns[0];
+
+            document.getElementById("coverage-value").textContent =
+                data.coverage.aligned_percent.toFixed(1) + "%";
+            document.getElementById("coverage-detail").textContent =
+                data.coverage.aligned_buckets + " of " + data.coverage.sensor_buckets +
+                " buckets aligned across " + data.coverage.duration_days + " days";
+
+            document.getElementById("relationship-value").textContent = strongest
+                ? formatCorrelation(strongest.change_correlation) + " Δr"
+                : "Not enough data";
+            document.getElementById("relationship-detail").textContent = strongest
+                ? strongest.outdoor_label + " ↔ " + strongest.indoor_label
+                : "More aligned observations are needed.";
+
+            document.getElementById("lag-value").textContent = strongestLag
+                ? formatLag(strongestLag.lag.minutes)
+                : "Not available";
+            document.getElementById("lag-detail").textContent = strongestLag
+                ? strongestLag.outdoor_label + " leads " + strongestLag.indoor_label +
+                    " (change r=" + formatCorrelation(strongestLag.lag.correlation) + ")"
+                : "No lag met the minimum sample requirement.";
+
+            document.getElementById("daily-value").textContent = daily
+                ? Math.round(daily.r_squared * 100) + "% R²"
+                : "Not available";
+            document.getElementById("daily-detail").textContent = daily
+                ? daily.label + " peaks near " + formatHour(daily.peak_hour)
+                : "More observations are needed.";
+        }
+
+        function renderScatterplots(relationships) {
+            scatterCharts.forEach(function (chart) { chart.destroy(); });
+            scatterCharts = [];
+            scatterGrid.replaceChildren();
+
+            relationships.slice(0, 4).forEach(function (relationship) {
+                const card = document.createElement("article");
+                card.className = "scatter-card";
+                const heading = document.createElement("h3");
+                heading.textContent = relationship.outdoor_label + " vs " + relationship.indoor_label;
+                const meta = document.createElement("p");
+                meta.className = "scatter-meta";
+                meta.textContent = "Pearson r " + formatCorrelation(relationship.pearson) +
+                    " · Spearman ρ " + formatCorrelation(relationship.spearman) +
+                    " · Change Δr " + formatCorrelation(relationship.change_correlation);
+                const canvasContainer = document.createElement("div");
+                canvasContainer.className = "scatter-canvas";
+                const canvas = document.createElement("canvas");
+                canvasContainer.appendChild(canvas);
+                card.append(heading, meta, canvasContainer);
+                scatterGrid.appendChild(card);
+
+                const datasets = [{
+                    type: "scatter",
+                    label: "Observations",
+                    data: relationship.points,
+                    backgroundColor: "rgba(36, 113, 163, 0.55)",
+                    pointRadius: 3
+                }];
+
+                if (relationship.fit) {
+                    datasets.push({
+                        type: "line",
+                        label: "Linear fit",
+                        data: [{
+                            x: relationship.fit.x_min,
+                            y: relationship.fit.intercept + relationship.fit.slope * relationship.fit.x_min
+                        }, {
+                            x: relationship.fit.x_max,
+                            y: relationship.fit.intercept + relationship.fit.slope * relationship.fit.x_max
+                        }],
+                        borderColor: "#d35400",
+                        borderWidth: 2,
+                        pointRadius: 0
+                    });
+                }
+
+                scatterCharts.push(new Chart(canvas, {
+                    type: "scatter",
+                    data: { datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        parsing: false,
+                        interaction: { mode: "nearest", intersect: false },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: relationship.outdoor_label + " (" + relationship.outdoor_unit + ")"
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: relationship.indoor_label + " (" + relationship.indoor_unit + ")"
+                                }
+                            }
+                        }
+                    }
+                }));
+            });
+        }
+
+        function renderRelationships(relationships) {
+            relationshipBody.replaceChildren();
+
+            relationships.forEach(function (relationship) {
+                const row = document.createElement("tr");
+                appendCell(row, relationship.indoor_label);
+                appendCell(row, relationship.outdoor_label);
+                appendCell(row, formatCorrelation(relationship.pearson), correlationClass(relationship.pearson));
+                appendCell(row, formatCorrelation(relationship.spearman), correlationClass(relationship.spearman));
+                appendCell(row, formatCorrelation(relationship.change_correlation), correlationClass(relationship.change_correlation));
+                appendCell(
+                    row,
+                    relationship.lag
+                        ? formatLag(relationship.lag.minutes) + " (r=" +
+                            formatCorrelation(relationship.lag.correlation) + ")"
+                        : "—"
+                );
+                appendCell(row, String(relationship.sample_count));
+                relationshipBody.appendChild(row);
+            });
+        }
+
+        function renderDailyPatterns(patterns) {
+            dailyBody.replaceChildren();
+
+            patterns.forEach(function (pattern) {
+                const row = document.createElement("tr");
+                appendCell(row, pattern.label);
+                appendCell(row, formatCorrelation(pattern.r_squared));
+                appendCell(row, pattern.amplitude + " " + pattern.unit);
+                appendCell(row, formatHour(pattern.peak_hour));
+                appendCell(row, String(pattern.sample_count));
+                dailyBody.appendChild(row);
+            });
+        }
+
+        function renderWarnings(warnings) {
+            warningList.replaceChildren();
+            warnings.forEach(function (warning) {
+                const item = document.createElement("li");
+                item.textContent = warning;
+                warningList.appendChild(item);
+            });
+        }
+
+        async function loadInsights() {
+            status.textContent = "Analyzing aligned indoor and outdoor observations...";
+            results.hidden = true;
+
+            try {
+                const response = await fetch(
+                    "{{ url_for('insights_api', sensor_id=sensor.sensor_id) }}" +
+                    "?range=" + currentRange +
+                    "&timezone=" + encodeURIComponent(timezoneName)
+                );
+                if (!response.ok) throw new Error("Insights request failed");
+                const data = await response.json();
+                renderSummary(data);
+                renderScatterplots(data.relationships);
+                renderRelationships(data.relationships);
+                renderDailyPatterns(data.daily_patterns);
+                renderWarnings(data.warnings);
+                results.hidden = false;
+                status.textContent = data.relationships.length
+                    ? data.relationships.length + " indoor/outdoor relationships analyzed"
+                    : "Not enough aligned variation to calculate relationships.";
+            } catch (error) {
+                status.textContent = "Unable to load correlation insights.";
+            }
+        }
+
+        rangeButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                rangeButtons.forEach(function (item) { item.classList.remove("active"); });
+                button.classList.add("active");
+                currentRange = button.dataset.range;
+                loadInsights();
+            });
+        });
+
+        themeButton.addEventListener("click", function () {
+            document.documentElement.dataset.theme =
+                document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+            localStorage.setItem("theme", document.documentElement.dataset.theme);
+            applyChartTheme();
+            updateThemeButton();
+            scatterCharts.forEach(function (chart) { chart.update(); });
+        });
+
+        applyChartTheme();
+        updateThemeButton();
+        loadInsights();
+    </script>
+</body>
+</html>
