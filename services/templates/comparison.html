@@ -10,23 +10,34 @@
             (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     </script>
     <style>
-        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); }
-        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); }
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --selected: #edf5fc; --selected-border: #6aa3cf; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --selected: #20384b; --selected-border: #6aa3cf; }
         body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-        .header-actions, .controls, .series-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+        .header-actions, .controls, .selector-actions { display: flex; flex-wrap: wrap; gap: 8px; }
         .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
         .controls { margin: 24px 0 18px; }
-        .series-controls { gap: 18px; margin-bottom: 18px; }
-        .series-control { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
-        .series-control input { width: 18px; height: 18px; accent-color: var(--button); }
+        .selector-panel { margin-bottom: 18px; padding: 18px; border: 1px solid var(--control); border-radius: 12px; background: var(--surface); box-shadow: 0 4px 14px var(--shadow); }
+        .selector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+        .selector-heading h2 { margin: 0 0 5px; font-size: 18px; }
+        .selection-summary { margin: 0; color: var(--muted); }
+        .series-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 16px; }
+        .series-control { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 11px 12px; border: 1px solid var(--control); border-radius: 9px; background: var(--page); font-weight: bold; cursor: pointer; transition: border-color 0.15s, background-color 0.15s, transform 0.15s; }
+        .series-control:hover { transform: translateY(-1px); }
+        .series-control.selected { border-color: var(--selected-border); background: var(--selected); }
+        .series-control input { width: 18px; height: 18px; margin: 0; accent-color: var(--button); }
+        .series-swatch { flex: 0 0 auto; width: 11px; height: 11px; border: 2px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1px var(--muted); }
+        .series-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; cursor: pointer; }
+        button:disabled { opacity: 0.5; cursor: default; }
         button.active, #unit-button, #theme-button { background: var(--button); color: var(--page); }
         .chart-card { height: 500px; padding: 22px; background: var(--surface); border-radius: 8px; box-shadow: 0 4px 14px var(--shadow); }
         .details, .status { color: var(--muted); }
         @media (max-width: 600px) {
             body { padding: 18px; }
             .header { align-items: flex-start; flex-direction: column; }
+            .selector-heading { flex-direction: column; }
+            .series-controls { grid-template-columns: 1fr; }
             .chart-card { height: 380px; padding: 12px; }
         }
     </style>
@@ -35,8 +46,8 @@
     <a class="back-link" href="{{ url_for('dashboard') }}">← Current readings</a>
     <div class="header">
         <div>
-            <h1>Indoor and outdoor temperature</h1>
-            <p class="details">Compare room temperatures with local outdoor conditions.</p>
+            <h1>Room comparison</h1>
+            <p class="details">Layer any combination of room sensors and outdoor weather on one timeline.</p>
             <p id="timezone-details" class="details"></p>
         </div>
         <div class="header-actions">
@@ -51,9 +62,23 @@
         <button class="range-button" data-range="3d">3 days</button>
         <button class="range-button" data-range="7d">7 days</button>
     </div>
-    <div id="series-controls" class="series-controls"></div>
+    <section class="selector-panel" aria-labelledby="sensor-selector-heading">
+        <div class="selector-heading">
+            <div>
+                <h2 id="sensor-selector-heading">Sensors on chart</h2>
+                <p id="selection-summary" class="selection-summary">Preparing sensor list...</p>
+            </div>
+            <div class="selector-actions">
+                <button id="select-all-button" type="button" disabled>Add all</button>
+                <button id="clear-all-button" type="button" disabled>Clear all</button>
+            </div>
+        </div>
+        <div id="series-controls" class="series-controls" role="group" aria-label="Choose sensors to compare"></div>
+    </section>
 
-    <div class="chart-card"><canvas id="comparison-chart"></canvas></div>
+    <div class="chart-card">
+        <canvas id="comparison-chart" aria-label="Selected room and outdoor temperature history"></canvas>
+    </div>
     <p id="status" class="status">Loading temperature history...</p>
 
     <script>
@@ -61,13 +86,18 @@
         const outdoorColor = "#566573";
         const status = document.getElementById("status");
         const seriesControls = document.getElementById("series-controls");
+        const selectionSummary = document.getElementById("selection-summary");
+        const selectAllButton = document.getElementById("select-all-button");
+        const clearAllButton = document.getElementById("clear-all-button");
         const themeButton = document.getElementById("theme-button");
         const unitButton = document.getElementById("unit-button");
         const rangeButtons = document.querySelectorAll(".range-button");
         const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const selectionStorageKey = "comparisonSeriesSelection";
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
         let currentRange = "24h";
         let comparisonData = null;
+        let selectedSeries = null;
 
         document.getElementById("timezone-details").textContent =
             "Times shown in " + (timezoneName || "your local timezone");
@@ -105,6 +135,39 @@
             return temperatureUnit === "F" ? (value * 9 / 5) + 32 : value;
         }
 
+        function getStoredSelection() {
+            const stored = localStorage.getItem(selectionStorageKey);
+            return stored === null
+                ? null
+                : new Set(stored.split(",").filter(Boolean));
+        }
+
+        function saveSelection() {
+            localStorage.setItem(selectionStorageKey, Array.from(selectedSeries).join(","));
+        }
+
+        function updateSelectionSummary() {
+            const total = chart.data.datasets.length;
+            const selected = chart.data.datasets.filter(function (dataset) {
+                return selectedSeries.has(dataset.seriesKey);
+            }).length;
+            selectionSummary.textContent = selected === 0
+                ? "No sensors selected"
+                : selected + " of " + total + " sources selected";
+            selectAllButton.disabled = selected === total;
+            clearAllButton.disabled = selected === 0;
+        }
+
+        function applySelection() {
+            chart.data.datasets.forEach(function (dataset, index) {
+                chart.setDatasetVisibility(index, selectedSeries.has(dataset.seriesKey));
+            });
+            saveSelection();
+            renderSeriesControls();
+            updateSelectionSummary();
+            chart.update();
+        }
+
         applyChartTheme();
         const chart = new Chart(document.getElementById("comparison-chart"), {
             type: "line",
@@ -134,12 +197,13 @@
             })).entries());
 
             chart.data.labels = labels.map(formatLocalTimestamp);
-            chart.data.datasets = sensors.map(function (sensor, index) {
+            const datasets = sensors.map(function (sensor, index) {
                 const values = new Map(readings
                     .filter(function (reading) { return reading.sensor_id === sensor[0]; })
                     .map(function (reading) { return [reading.reading_time, reading.temperature_c]; }));
                 return {
                     label: sensor[1],
+                    seriesKey: "sensor:" + sensor[0],
                     data: labels.map(function (timestamp) { return convertTemperature(values.get(timestamp)); }),
                     borderColor: palette[index % palette.length],
                     backgroundColor: "transparent",
@@ -154,8 +218,9 @@
             const outdoorValues = new Map(comparisonData.outdoor.map(function (reading) {
                 return [reading.reading_time, reading.outdoor_temperature_c];
             }));
-            chart.data.datasets.push({
+            datasets.push({
                 label: comparisonData.weather ? comparisonData.weather.location_name : "Outdoor",
+                seriesKey: "outdoor",
                 data: labels.map(function (timestamp) { return convertTemperature(outdoorValues.get(timestamp)); }),
                 borderColor: outdoorColor,
                 backgroundColor: "transparent",
@@ -167,9 +232,19 @@
                 yAxisID: "temperature"
             });
 
+            if (selectedSeries === null) {
+                selectedSeries = getStoredSelection() ||
+                    new Set(datasets.map(function (dataset) { return dataset.seriesKey; }));
+            }
+
+            chart.data.datasets = datasets;
+            chart.data.datasets.forEach(function (dataset, index) {
+                chart.setDatasetVisibility(index, selectedSeries.has(dataset.seriesKey));
+            });
             chart.options.scales.temperature.title.text = "Temperature (°" + temperatureUnit + ")";
             unitButton.textContent = temperatureUnit === "F" ? "Show °C" : "Show °F";
             renderSeriesControls();
+            updateSelectionSummary();
             chart.update();
         }
 
@@ -178,14 +253,30 @@
             chart.data.datasets.forEach(function (dataset, index) {
                 const label = document.createElement("label");
                 label.className = "series-control";
+                label.classList.toggle("selected", selectedSeries.has(dataset.seriesKey));
                 const checkbox = document.createElement("input");
                 checkbox.type = "checkbox";
-                checkbox.checked = !dataset.hidden;
+                checkbox.checked = selectedSeries.has(dataset.seriesKey);
                 checkbox.addEventListener("change", function () {
+                    if (checkbox.checked) {
+                        selectedSeries.add(dataset.seriesKey);
+                    } else {
+                        selectedSeries.delete(dataset.seriesKey);
+                    }
                     chart.setDatasetVisibility(index, checkbox.checked);
+                    label.classList.toggle("selected", checkbox.checked);
+                    saveSelection();
+                    updateSelectionSummary();
                     chart.update();
                 });
-                label.append(checkbox, document.createTextNode(dataset.label));
+                const swatch = document.createElement("span");
+                swatch.className = "series-swatch";
+                swatch.style.backgroundColor = dataset.borderColor;
+                swatch.setAttribute("aria-hidden", "true");
+                const name = document.createElement("span");
+                name.className = "series-name";
+                name.textContent = dataset.label;
+                label.append(checkbox, swatch, name);
                 seriesControls.appendChild(label);
             });
         }
@@ -211,6 +302,18 @@
                 button.classList.add("active");
                 currentRange = button.dataset.range;
                 loadHistory();
+            });
+
+            selectAllButton.addEventListener("click", function () {
+                selectedSeries = new Set(chart.data.datasets.map(function (dataset) {
+                    return dataset.seriesKey;
+                }));
+                applySelection();
+            });
+
+            clearAllButton.addEventListener("click", function () {
+                selectedSeries = new Set();
+                applySelection();
             });
         });
 
