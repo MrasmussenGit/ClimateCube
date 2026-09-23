@@ -5,18 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ sensor.sensor_name }} History</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='chart_outliers.js') }}"></script>
     <script>
         document.documentElement.dataset.theme = localStorage.getItem("theme") ||
             (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     </script>
     <style>
-        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); }
-        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); }
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --control: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --selected-border: #6aa3cf; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --control: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --selected-border: #6aa3cf; }
         body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         .header-actions { display: flex; gap: 8px; }
         .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; }
+        .outlier-control { position: relative; display: flex; }
+        .outlier-control #outlier-button { padding-right: 42px; }
+        .outlier-help { position: absolute; top: 50%; right: 11px; display: grid; place-items: center; width: 19px; height: 19px; padding: 0; border: 1px solid currentColor; border-radius: 50%; background: transparent; color: inherit; font: bold 12px/1 Arial, sans-serif; transform: translateY(-50%); cursor: help; }
+        .outlier-help:hover, .outlier-help:focus-visible { outline: 2px solid var(--selected-border); outline-offset: 2px; }
+        .outlier-explanation { position: absolute; z-index: 20; top: calc(100% + 9px); left: 0; box-sizing: border-box; width: min(360px, calc(100vw - 60px)); padding: 11px 13px; border: 1px solid var(--control); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.4; visibility: hidden; opacity: 0; pointer-events: none; }
+        .outlier-help:hover + .outlier-explanation, .outlier-help:focus + .outlier-explanation { visibility: visible; opacity: 1; }
         .metric-controls { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 18px; }
         .metric-control { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
         .metric-control input { width: 18px; height: 18px; accent-color: var(--button); }
@@ -58,6 +65,16 @@
         <button class="range-button active" data-range="24h">24 hours</button>
         <button class="range-button" data-range="3d">3 days</button>
         <button class="range-button" data-range="7d">7 days</button>
+        <span class="outlier-control">
+            <button id="outlier-button" type="button" aria-pressed="false">Remove outliers</button>
+            <button class="outlier-help" type="button" aria-label="How outliers are identified" aria-describedby="outlier-explanation">i</button>
+            <span id="outlier-explanation" class="outlier-explanation" role="tooltip">
+                Looks for isolated readings that sharply disagree with nearby values
+                while the surrounding readings remain consistent. Filtering is applied
+                independently to every charted measurement. Stored data is never changed,
+                and Show raw data restores every point.
+            </span>
+        </span>
     </div>
 
     <div id="environment-controls" class="metric-controls">
@@ -102,6 +119,7 @@
         const sensorId = {{ sensor.sensor_id }};
         const themeButton = document.getElementById("theme-button");
         const unitButton = document.getElementById("unit-button");
+        const outlierButton = document.getElementById("outlier-button");
         const rangeButtons = document.querySelectorAll(".range-button");
         const environmentControls = document.getElementById("environment-controls");
         const gasChartsContainer = document.getElementById("gas-charts");
@@ -113,6 +131,8 @@
         let historyReadings = [];
         let additionalMeasurements = [];
         let gasCharts = [];
+        let removeOutliers = false;
+        let filteredOutlierCount = 0;
 
         const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timezoneDetails.textContent = "Times shown in " + (timezoneName || "your local timezone");
@@ -127,6 +147,31 @@
             const dark = document.documentElement.dataset.theme === "dark";
             themeButton.textContent = dark ? "Light mode" : "Dark mode";
             themeButton.setAttribute("aria-pressed", String(dark));
+        }
+
+        function filterOutliers(values) {
+            const result = ClimateCubeOutliers.filter(values, removeOutliers);
+            filteredOutlierCount += result.count;
+            return result.values;
+        }
+
+        function updateOutlierButton() {
+            outlierButton.textContent = removeOutliers ? "Show raw data" : "Remove outliers";
+            outlierButton.classList.toggle("active", removeOutliers);
+            outlierButton.setAttribute("aria-pressed", String(removeOutliers));
+        }
+
+        function updateStatus() {
+            if (!historyReadings.length) {
+                status.textContent = "No readings found for this period.";
+                return;
+            }
+
+            status.textContent = removeOutliers
+                ? historyReadings.length + " chart points · " + filteredOutlierCount +
+                    " isolated " + (filteredOutlierCount === 1 ? "outlier" : "outliers") +
+                    " hidden across all measurements"
+                : historyReadings.length + " chart points";
         }
 
         applyChartTheme();
@@ -268,10 +313,11 @@
                 const values = new Map(additionalMeasurements
                     .filter(function (measurement) { return measurement.key === definition.key; })
                     .map(function (measurement) { return [measurement.reading_time, measurement.value]; }));
-                const data = historyReadings.map(function (reading) {
+                const rawData = historyReadings.map(function (reading) {
                     const value = values.get(reading.reading_time);
                     return value === undefined ? null : Number(value);
                 });
+                const data = filterOutliers(rawData);
                 const numericValues = data.filter(function (value) {
                     return Number.isFinite(value);
                 });
@@ -354,35 +400,50 @@
                 return formatLocalTimestamp(reading.reading_time);
             });
             environmentChart.data.labels = labels;
-            environmentChart.data.datasets[0].data = historyReadings.map(function (reading) {
-                const celsius = Number(reading.temperature_c);
-                return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
+            environmentChart.data.datasets[0].data = filterOutliers(
+                historyReadings.map(function (reading) {
+                    return Number(reading.temperature_c);
+                })
+            ).map(function (celsius) {
+                return celsius === null || !useFahrenheit
+                    ? celsius : (celsius * 9 / 5) + 32;
             });
-            environmentChart.data.datasets[1].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[1].data = filterOutliers(historyReadings.map(function (reading) {
                 return Number(reading.humidity_pct);
-            });
-            environmentChart.data.datasets[2].data = historyReadings.map(function (reading) {
+            }));
+            environmentChart.data.datasets[2].data = filterOutliers(historyReadings.map(function (reading) {
                 return Number(reading.pressure_hpa);
-            });
-            environmentChart.data.datasets[3].data = historyReadings.map(function (reading) {
+            }));
+            environmentChart.data.datasets[3].data = filterOutliers(historyReadings.map(function (reading) {
                 if (reading.outdoor_temperature_c === null) return null;
-                const celsius = Number(reading.outdoor_temperature_c);
-                return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
+                return Number(reading.outdoor_temperature_c);
+            })).map(function (celsius) {
+                return celsius === null || !useFahrenheit
+                    ? celsius : (celsius * 9 / 5) + 32;
             });
-            environmentChart.data.datasets[4].data = historyReadings.map(function (reading) {
+            environmentChart.data.datasets[4].data = filterOutliers(historyReadings.map(function (reading) {
                 return reading.outdoor_humidity_pct === null
                     ? null : Number(reading.outdoor_humidity_pct);
-            });
-            environmentChart.data.datasets[5].data = historyReadings.map(function (reading) {
+            }));
+            environmentChart.data.datasets[5].data = filterOutliers(historyReadings.map(function (reading) {
                 if (reading.outdoor_dew_point_c === null) return null;
-                const celsius = Number(reading.outdoor_dew_point_c);
-                return useFahrenheit ? (celsius * 9 / 5) + 32 : celsius;
+                return Number(reading.outdoor_dew_point_c);
+            })).map(function (celsius) {
+                return celsius === null || !useFahrenheit
+                    ? celsius : (celsius * 9 / 5) + 32;
             });
             environmentChart.options.scales.temperature.title.text =
                 "Temperature (°" + temperatureUnit + ")";
             unitButton.textContent = useFahrenheit ? "Show °C" : "Show °F";
             environmentChart.update();
-            gasCharts.forEach(function (chart) { chart.update(); });
+        }
+
+        function renderCharts() {
+            filteredOutlierCount = 0;
+            updateChart();
+            addMeasurementCharts();
+            updateOutlierButton();
+            updateStatus();
         }
 
         async function loadHistory() {
@@ -395,11 +456,7 @@
                 const result = await response.json();
                 historyReadings = result.readings;
                 additionalMeasurements = result.measurements;
-                addMeasurementCharts();
-                updateChart();
-                status.textContent = historyReadings.length
-                    ? historyReadings.length + " chart points"
-                    : "No readings found for this period.";
+                renderCharts();
             } catch (error) {
                 status.textContent = "Unable to load history.";
             }
@@ -412,6 +469,11 @@
                 currentRange = button.dataset.range;
                 loadHistory();
             });
+        });
+
+        outlierButton.addEventListener("click", function () {
+            removeOutliers = !removeOutliers;
+            renderCharts();
         });
 
         function updateMetricVisibility() {
@@ -441,7 +503,7 @@
         unitButton.addEventListener("click", function () {
             temperatureUnit = temperatureUnit === "C" ? "F" : "C";
             localStorage.setItem("temperatureUnit", temperatureUnit);
-            updateChart();
+            renderCharts();
         });
 
         themeButton.addEventListener("click", function () {
@@ -455,6 +517,7 @@
         });
 
         updateThemeButton();
+        updateOutlierButton();
         updateMetricVisibility();
         loadHistory();
     </script>

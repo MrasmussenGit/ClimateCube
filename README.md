@@ -82,9 +82,10 @@ and longitude remain available under Advanced settings.
 Use **Compare rooms and outdoor weather** on the dashboard to layer selected
 room sensors and outdoor temperature on one chart. The comparison view includes
 individual sensor toggles plus **Add all** and **Clear all** actions, and keeps
-the selection on that browser between visits. Use **Remove outliers** to hide
-isolated temperature spikes from the chart without deleting the stored sensor
-readings; **Show raw data** restores every point.
+the selection on that browser between visits. Use **Remove outliers** on either
+history view to hide isolated spikes independently across every charted
+measurement without deleting stored sensor readings; **Show raw data** restores
+every point.
 
 Open-Meteo does not require an account or API key for non-commercial use within
 its published usage limits. Review its current licence and pricing before using

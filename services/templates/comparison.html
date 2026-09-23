@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Indoor and Outdoor Temperature</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='chart_outliers.js') }}"></script>
     <script>
         document.documentElement.dataset.theme = localStorage.getItem("theme") ||
             (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -17,6 +18,12 @@
         .header-actions, .controls, .selector-actions { display: flex; flex-wrap: wrap; gap: 8px; }
         .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
         .controls { margin: 24px 0 18px; }
+        .outlier-control { position: relative; display: flex; }
+        .outlier-control #outlier-button { padding-right: 42px; }
+        .outlier-help { position: absolute; top: 50%; right: 11px; display: grid; place-items: center; width: 19px; height: 19px; padding: 0; border: 1px solid currentColor; border-radius: 50%; background: transparent; color: inherit; font: bold 12px/1 Arial, sans-serif; transform: translateY(-50%); cursor: help; }
+        .outlier-help:hover, .outlier-help:focus-visible { outline: 2px solid var(--selected-border); outline-offset: 2px; }
+        .outlier-explanation { position: absolute; z-index: 20; top: calc(100% + 9px); left: 0; box-sizing: border-box; width: min(360px, calc(100vw - 60px)); padding: 11px 13px; border: 1px solid var(--control); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.4; visibility: hidden; opacity: 0; pointer-events: none; }
+        .outlier-help:hover + .outlier-explanation, .outlier-help:focus + .outlier-explanation { visibility: visible; opacity: 1; }
         .selector-panel { margin-bottom: 18px; padding: 18px; border: 1px solid var(--control); border-radius: 12px; background: var(--surface); box-shadow: 0 4px 14px var(--shadow); }
         .selector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
         .selector-heading h2 { margin: 0 0 5px; font-size: 18px; }
@@ -61,7 +68,16 @@
         <button class="range-button active" data-range="24h">24 hours</button>
         <button class="range-button" data-range="3d">3 days</button>
         <button class="range-button" data-range="7d">7 days</button>
-        <button id="outlier-button" type="button" aria-pressed="false">Remove outliers</button>
+        <span class="outlier-control">
+            <button id="outlier-button" type="button" aria-pressed="false">Remove outliers</button>
+            <button class="outlier-help" type="button" aria-label="How outliers are identified" aria-describedby="outlier-explanation">i</button>
+            <span id="outlier-explanation" class="outlier-explanation" role="tooltip">
+                Looks for isolated readings that sharply disagree with nearby values
+                while the surrounding readings remain consistent. Filtering is applied
+                independently to every charted measurement. Stored data is never changed,
+                and Show raw data restores every point.
+            </span>
+        </span>
     </div>
     <section class="selector-panel" aria-labelledby="sensor-selector-heading">
         <div class="selector-heading">
@@ -139,32 +155,10 @@
             return temperatureUnit === "F" ? (value * 9 / 5) + 32 : value;
         }
 
-        function filterIsolatedOutliers(values) {
-            if (!removeOutliers) return values;
-
-            const filtered = values.slice();
-            const populatedIndexes = values
-                .map(function (value, index) {
-                    return value === null || value === undefined ? null : index;
-                })
-                .filter(function (index) { return index !== null; });
-
-            for (let position = 1; position < populatedIndexes.length - 1; position += 1) {
-                const previousIndex = populatedIndexes[position - 1];
-                const currentIndex = populatedIndexes[position];
-                const nextIndex = populatedIndexes[position + 1];
-                const previous = Number(values[previousIndex]);
-                const current = Number(values[currentIndex]);
-                const next = Number(values[nextIndex]);
-                const expected = (previous + next) / 2;
-
-                if (Math.abs(current - expected) >= 4 && Math.abs(previous - next) <= 2) {
-                    filtered[currentIndex] = null;
-                    filteredOutlierCount += 1;
-                }
-            }
-
-            return filtered;
+        function filterOutliers(values) {
+            const result = ClimateCubeOutliers.filter(values, removeOutliers);
+            filteredOutlierCount += result.count;
+            return result.values;
         }
 
         function updateOutlierButton() {
@@ -258,7 +252,7 @@
                 return {
                     label: sensor[1],
                     seriesKey: "sensor:" + sensor[0],
-                    data: filterIsolatedOutliers(rawValues).map(convertTemperature),
+                    data: filterOutliers(rawValues).map(convertTemperature),
                     borderColor: palette[index % palette.length],
                     backgroundColor: "transparent",
                     borderWidth: 2,
@@ -278,7 +272,7 @@
             datasets.push({
                 label: comparisonData.weather ? comparisonData.weather.location_name : "Outdoor",
                 seriesKey: "outdoor",
-                data: filterIsolatedOutliers(rawOutdoorValues).map(convertTemperature),
+                data: filterOutliers(rawOutdoorValues).map(convertTemperature),
                 borderColor: outdoorColor,
                 backgroundColor: "transparent",
                 borderWidth: 3,
