@@ -40,9 +40,16 @@
         .panel h2 { margin-top: 0; }
         .scatter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
         .scatter-card { min-width: 0; padding: 16px; }
+        .scatter-heading { display: flex; align-items: center; gap: 7px; }
         .scatter-card h3 { margin: 0; font-size: 17px; }
         .scatter-meta { margin: 5px 0 12px; color: var(--muted); font-size: 13px; }
+        .scatter-interpretation { min-height: 58px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text); font-size: 13px; line-height: 1.45; }
         .scatter-canvas { height: 260px; }
+        .learning-card { margin: 14px 0 18px; padding: 16px 18px; border-left: 4px solid #2471a3; border-radius: 8px; background: var(--page); }
+        .learning-card h3 { margin: 0 0 10px; font-size: 17px; }
+        .learning-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 22px; }
+        .learning-item { color: var(--muted); font-size: 13px; line-height: 1.45; }
+        .learning-item strong { color: var(--text); }
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th, td { padding: 10px 9px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
@@ -133,8 +140,25 @@
         </div>
 
         <section class="panel">
-            <h2>Leading relationships</h2>
+            <h2 class="field-label">
+                Leading relationships
+                <span class="help">
+                    <button class="help-button" type="button" aria-label="Explain leading relationship scatterplots" aria-describedby="help-scatterplots">i</button>
+                    <span id="help-scatterplots" class="help-text" role="tooltip">Each chart compares two measurements observed at matching times. Dots near the orange best-fit line indicate a more consistent straight-line relationship; dots spread far from it indicate that the outdoor value alone does not explain indoor conditions well. Direction and closeness describe association, not cause.</span>
+                </span>
+            </h2>
             <p class="method-note">Scatterplots show observed levels. The table also reports correlation between consecutive changes (Δr), which is less vulnerable to two unrelated series sharing a smooth daily trend.</p>
+            <aside class="learning-card">
+                <h3>How to read a scatterplot</h3>
+                <div class="learning-grid">
+                    <div class="learning-item"><strong>Each blue dot</strong> is one indoor reading paired with the closest outdoor reading from the same time.</div>
+                    <div class="learning-item"><strong>The orange line</strong> is the single straight line that best summarizes the overall cloud of dots. It is a guide, not a boundary or forecast.</div>
+                    <div class="learning-item"><strong>Dots packed close to the line</strong> mean one value changes predictably with the other. Dots scattered widely mean other influences are important.</div>
+                    <div class="learning-item"><strong>An upward line</strong> is a positive relationship: higher outdoor values tend to accompany higher indoor values. A downward line is negative.</div>
+                    <div class="learning-item"><strong>A nearly flat line</strong> suggests little straight-line relationship. Curves, clusters, or separate groups may still reveal patterns a straight line misses.</div>
+                    <div class="learning-item"><strong>Correlation is not causation.</strong> Time of day, HVAC, occupancy, sunlight, open windows, and weather can move both measurements together.</div>
+                </div>
+            </aside>
             <div id="scatter-grid" class="scatter-grid"></div>
         </section>
 
@@ -311,6 +335,49 @@
             return value > 0 ? "positive" : "negative";
         }
 
+        function describeScatter(relationship) {
+            const correlation = relationship.pearson;
+
+            if (correlation === null || correlation === undefined) {
+                return "There is not enough variation to describe a straight-line relationship for this pair.";
+            }
+
+            const magnitude = Math.abs(correlation);
+            let clustering;
+            if (magnitude >= 0.8) {
+                clustering = "The dots should cluster very tightly around the line";
+            } else if (magnitude >= 0.6) {
+                clustering = "The dots should cluster fairly tightly around the line";
+            } else if (magnitude >= 0.4) {
+                clustering = "The dots show a moderate amount of scatter around the line";
+            } else if (magnitude >= 0.2) {
+                clustering = "The dots are loosely associated and substantially scattered";
+            } else {
+                clustering = "The dots are widely scattered and the line is a weak summary";
+            }
+
+            const direction = correlation > 0
+                ? " Higher outdoor values generally accompany higher indoor values."
+                : correlation < 0
+                    ? " Higher outdoor values generally accompany lower indoor values."
+                    : " The best-fit line is essentially flat.";
+            let comparison = "";
+
+            if (relationship.change_correlation !== null) {
+                const changeMagnitude = Math.abs(relationship.change_correlation);
+                if (magnitude - changeMagnitude >= 0.35) {
+                    comparison = " Short-term changes line up much less strongly than the levels, so a shared daily or seasonal trend may explain much of the apparent relationship.";
+                } else if (changeMagnitude >= 0.4) {
+                    comparison = " Short-term changes also move together, which supports—but does not prove—a direct connection.";
+                } else {
+                    comparison = " Short-term changes show limited agreement, so interpret the fitted line cautiously.";
+                }
+            }
+
+            return clustering + "." + direction + comparison +
+                " Other unmeasured factors may affect both variables.";
+        }
+
         function appendCell(row, text, className) {
             const cell = document.createElement("td");
             cell.textContent = text;
@@ -366,8 +433,28 @@
             relationships.slice(0, 4).forEach(function (relationship) {
                 const card = document.createElement("article");
                 card.className = "scatter-card";
+                const headingRow = document.createElement("div");
+                headingRow.className = "scatter-heading";
                 const heading = document.createElement("h3");
                 heading.textContent = relationship.outdoor_label + " vs " + relationship.indoor_label;
+                const help = document.createElement("span");
+                help.className = "help";
+                const helpButton = document.createElement("button");
+                helpButton.className = "help-button";
+                helpButton.type = "button";
+                helpButton.textContent = "i";
+                helpButton.setAttribute("aria-label", "Explain " + relationship.outdoor_label + " versus " + relationship.indoor_label);
+                const helpText = document.createElement("span");
+                const helpId = "scatter-help-" + relationship.id.replace(/[^a-zA-Z0-9_-]/g, "-");
+                helpText.id = helpId;
+                helpText.className = "help-text";
+                helpText.setAttribute("role", "tooltip");
+                helpText.textContent = "Horizontal position is " + relationship.outdoor_label +
+                    "; vertical position is " + relationship.indoor_label +
+                    ". " + describeScatter(relationship);
+                helpButton.setAttribute("aria-describedby", helpId);
+                help.append(helpButton, helpText);
+                headingRow.append(heading, help);
                 const meta = document.createElement("p");
                 meta.className = "scatter-meta";
                 meta.textContent = "Pearson r " + formatCorrelation(relationship.pearson) +
@@ -377,7 +464,10 @@
                 canvasContainer.className = "scatter-canvas";
                 const canvas = document.createElement("canvas");
                 canvasContainer.appendChild(canvas);
-                card.append(heading, meta, canvasContainer);
+                const interpretation = document.createElement("p");
+                interpretation.className = "scatter-interpretation";
+                interpretation.textContent = describeScatter(relationship);
+                card.append(headingRow, meta, canvasContainer, interpretation);
                 scatterGrid.appendChild(card);
 
                 const datasets = [{

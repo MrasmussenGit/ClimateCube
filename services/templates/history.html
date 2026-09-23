@@ -28,6 +28,7 @@
         .outlier-help:hover + .outlier-explanation, .outlier-help:focus + .outlier-explanation { visibility: visible; opacity: 1; }
         .metric-controls { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 18px; }
         .metric-control { display: flex; align-items: center; gap: 6px; font-weight: bold; cursor: pointer; }
+        .metric-control label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
         .metric-control input { width: 18px; height: 18px; accent-color: var(--button); }
         button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; cursor: pointer; }
         button.active, #unit-button, #theme-button { background: var(--button); color: var(--page); }
@@ -38,11 +39,11 @@
         .gas-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
         .gas-chart-card { min-width: 0; padding: 18px; background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
         .gas-chart-heading { position: relative; display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 18px; }
-        .gas-help { position: relative; display: inline-flex; }
-        .gas-help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; color: var(--muted); font: bold 11px/1 Arial, sans-serif; cursor: help; }
-        .gas-help-button:hover, .gas-help-button:focus-visible { border-color: var(--text); color: var(--text); outline: 2px solid var(--selected-border); outline-offset: 2px; }
-        .gas-help-text { position: absolute; z-index: 30; bottom: calc(100% + 9px); left: -8px; box-sizing: border-box; width: min(390px, calc(100vw - 60px)); padding: 11px 13px; border: 1px solid var(--control); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.45; visibility: hidden; opacity: 0; pointer-events: none; }
-        .gas-help-button:hover + .gas-help-text, .gas-help-button:focus + .gas-help-text { visibility: visible; opacity: 1; }
+        .metric-help, .gas-help { position: relative; display: inline-flex; }
+        .metric-help-button, .gas-help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; color: var(--muted); font: bold 11px/1 Arial, sans-serif; cursor: help; }
+        .metric-help-button:hover, .metric-help-button:focus-visible, .gas-help-button:hover, .gas-help-button:focus-visible { border-color: var(--text); color: var(--text); outline: 2px solid var(--selected-border); outline-offset: 2px; }
+        .metric-help-text, .gas-help-text { position: absolute; z-index: 30; bottom: calc(100% + 9px); left: -8px; box-sizing: border-box; width: min(390px, calc(100vw - 60px)); padding: 11px 13px; border: 1px solid var(--control); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.45; visibility: hidden; opacity: 0; pointer-events: none; }
+        .metric-help-button:hover + .metric-help-text, .metric-help-button:focus + .metric-help-text, .gas-help-button:hover + .gas-help-text, .gas-help-button:focus + .gas-help-text { visibility: visible; opacity: 1; }
         .gas-safety { max-width: 1050px; padding: 11px 13px; border-left: 4px solid #d97706; border-radius: 6px; background: var(--warning-bg); color: var(--text); font-size: 13px; line-height: 1.45; }
         .gas-chart-canvas { height: 240px; }
         .details, .status { color: var(--muted); }
@@ -87,34 +88,58 @@
     </div>
 
     <div id="environment-controls" class="metric-controls">
-        <label class="metric-control">
-            <input type="checkbox" data-chart="environment" data-dataset="0" checked>
-            Temperature
-        </label>
-        <label class="metric-control">
-            <input type="checkbox" data-chart="environment" data-dataset="1">
-            Humidity
-        </label>
-        <label class="metric-control">
-            <input type="checkbox" data-chart="environment" data-dataset="2">
-            Pressure
-        </label>
-        <label class="metric-control">
-            <input type="checkbox" data-chart="environment" data-dataset="3" checked>
-            Outdoor temperature
-        </label>
-        <label class="metric-control">
-            <input type="checkbox" data-chart="environment" data-dataset="4">
-            Outdoor humidity
-        </label>
-        <label class="metric-control">
-            <input type="checkbox" data-chart="environment" data-dataset="5">
-            Outdoor dew point
-        </label>
+        <span class="metric-control">
+            <label><input type="checkbox" data-chart="environment" data-dataset="0" checked> Temperature</label>
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain indoor temperature" aria-describedby="metric-help-temperature">i</button>
+                <span id="metric-help-temperature" class="metric-help-text" role="tooltip">The air temperature measured at this sensor. It reflects the sensor's immediate location, so sunlight, nearby electronics, exterior walls, vents, and mounting height can make it differ from the room average. Use the trend to see heating, cooling, and how quickly the room responds to outdoor or HVAC changes.</span>
+            </span>
+        </span>
+        <span class="metric-control">
+            <label><input type="checkbox" data-chart="environment" data-dataset="1"> Humidity</label>
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain indoor humidity" aria-describedby="metric-help-humidity">i</button>
+                <span id="metric-help-humidity" class="metric-help-text" role="tooltip">Relative humidity is how full the air is with moisture at its current temperature. Roughly 30–60% is commonly comfortable. Sustained levels above about 60% can encourage condensation, dust mites, and mold, while very low levels can feel dry. Because relative humidity changes when temperature changes, also compare dew point and longer trends.</span>
+            </span>
+        </span>
+        <span class="metric-control">
+            <label><input type="checkbox" data-chart="environment" data-dataset="2"> Pressure</label>
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain indoor pressure" aria-describedby="metric-help-pressure">i</button>
+                <span id="metric-help-pressure" class="metric-help-text" role="tooltip">Barometric pressure is the weight of the atmosphere, reported in hectopascals. Indoor and outdoor pressure are usually almost the same; broad rises and falls mainly reflect changing weather. This sensor does not measure room pressurization, airflow, ventilation quality, or whether combustion appliances are drafting safely.</span>
+            </span>
+        </span>
+        <span class="metric-control">
+            <label><input type="checkbox" data-chart="environment" data-dataset="3" checked> Outdoor temperature</label>
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain outdoor temperature" aria-describedby="metric-help-outdoor-temperature">i</button>
+                <span id="metric-help-outdoor-temperature" class="metric-help-text" role="tooltip">Outdoor air temperature from Open-Meteo for the configured location. It is useful for comparing how strongly and how quickly a room follows outdoor conditions. It may differ from conditions at your building because of shade, pavement, elevation, wind exposure, and the weather model's geographic resolution.</span>
+            </span>
+        </span>
+        <span class="metric-control">
+            <label><input type="checkbox" data-chart="environment" data-dataset="4"> Outdoor humidity</label>
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain outdoor humidity" aria-describedby="metric-help-outdoor-humidity">i</button>
+                <span id="metric-help-outdoor-humidity" class="metric-help-text" role="tooltip">Outdoor relative humidity from Open-Meteo. It depends strongly on temperature, so it often rises overnight even when the actual amount of water vapor changes little. Use outdoor dew point for a more direct view of moisture and compare this series with indoor humidity to study ventilation and moisture movement.</span>
+            </span>
+        </span>
+        <span class="metric-control">
+            <label><input type="checkbox" data-chart="environment" data-dataset="5"> Outdoor dew point</label>
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain outdoor dew point" aria-describedby="metric-help-dew-point">i</button>
+                <span id="metric-help-dew-point" class="metric-help-text" role="tooltip">Dew point describes the actual moisture content of outdoor air: it is the temperature at which that air would become saturated and condensation could begin. Higher dew points feel more humid. When an indoor surface is colder than the surrounding air's dew point, condensation can form; surface temperature is not measured here.</span>
+            </span>
+        </span>
     </div>
 
     <section class="chart-section">
-        <h2 class="chart-heading">Environmental conditions</h2>
+        <h2 class="chart-heading">
+            Environmental conditions
+            <span class="metric-help">
+                <button class="metric-help-button" type="button" aria-label="Explain environmental conditions chart" aria-describedby="metric-help-environment-chart">i</button>
+                <span id="metric-help-environment-chart" class="metric-help-text" role="tooltip">Select any measurements above to overlay them through time. Temperature and dew point share the temperature axis; humidity uses a 0–100% axis; pressure uses its own scale. Hidden series remain listed in the chart legend with a strike-through. Showing measurements with very different units can require reading more than one vertical axis.</span>
+            </span>
+        </h2>
         <div class="chart-card"><canvas id="environment-chart"></canvas></div>
     </section>
     <section id="gas-section" class="chart-section" hidden>
