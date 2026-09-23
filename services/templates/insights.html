@@ -20,6 +20,15 @@
         .details, .status, .method-note { color: var(--muted); }
         button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; cursor: pointer; }
         button.active, #theme-button { background: var(--button); color: var(--page); }
+        .field-label { display: inline-flex; align-items: center; gap: 6px; }
+        .help { position: relative; display: inline-flex; vertical-align: middle; }
+        .help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; color: var(--muted); font: bold 11px/1 Arial, sans-serif; cursor: help; }
+        .help-button:hover, .help-button:focus-visible { border-color: var(--text); color: var(--text); outline: 2px solid #6aa3cf; outline-offset: 2px; }
+        .help-text { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: 50%; box-sizing: border-box; width: min(340px, calc(100vw - 50px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.45; text-align: left; text-transform: none; letter-spacing: normal; white-space: normal; visibility: hidden; opacity: 0; pointer-events: none; transform: translateX(-50%); }
+        .help-button:hover + .help-text, .help-button:focus + .help-text { visibility: visible; opacity: 1; }
+        .table-wrap .help-text { top: calc(100% + 8px); bottom: auto; }
+        th:first-child .help-text, th:nth-child(2) .help-text { left: 0; transform: none; }
+        th:last-child .help-text { right: 0; left: auto; transform: none; }
         .controls { margin: 24px 0; }
         .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
         .summary-card, .panel, .scatter-card { background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
@@ -78,22 +87,46 @@
     <section id="results" hidden>
         <div class="summary-grid">
             <article class="summary-card">
-                <div class="summary-label">Outdoor data coverage</div>
+                <div class="summary-label field-label">
+                    Outdoor data coverage
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain outdoor data coverage" aria-describedby="help-coverage">i</button>
+                        <span id="help-coverage" class="help-text" role="tooltip">The percentage of indoor 15-minute time blocks that could be matched to a nearby outdoor weather observation. Higher coverage makes comparisons more representative of the selected period.</span>
+                    </span>
+                </div>
                 <div id="coverage-value" class="summary-value">—</div>
                 <div id="coverage-detail" class="summary-detail"></div>
             </article>
             <article class="summary-card">
-                <div class="summary-label">Strongest changing relationship</div>
+                <div class="summary-label field-label">
+                    Strongest changing relationship
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain strongest changing relationship" aria-describedby="help-changing">i</button>
+                        <span id="help-changing" class="help-text" role="tooltip">The indoor/outdoor pair whose short-term movements line up most closely. Positive values move in the same direction; negative values move in opposite directions. Values closer to -1 or +1 indicate a stronger relationship.</span>
+                    </span>
+                </div>
                 <div id="relationship-value" class="summary-value">—</div>
                 <div id="relationship-detail" class="summary-detail"></div>
             </article>
             <article class="summary-card">
-                <div class="summary-label">Estimated response delay</div>
+                <div class="summary-label field-label">
+                    Estimated response delay
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain estimated response delay" aria-describedby="help-delay">i</button>
+                        <span id="help-delay" class="help-text" role="tooltip">The delay at which changes outdoors best line up with later changes indoors. For example, 2 hours suggests the room often responds about two hours after outdoor conditions change. It is an estimate, not proof of cause.</span>
+                    </span>
+                </div>
                 <div id="lag-value" class="summary-value">—</div>
                 <div id="lag-detail" class="summary-detail"></div>
             </article>
             <article class="summary-card">
-                <div class="summary-label">Strongest daily pattern</div>
+                <div class="summary-label field-label">
+                    Strongest daily pattern
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain strongest daily pattern" aria-describedby="help-daily-summary">i</button>
+                        <span id="help-daily-summary" class="help-text" role="tooltip">The indoor measurement most consistently following a repeating 24-hour rhythm. The percentage is how much of that measurement's variation is described by a simple daily cycle.</span>
+                    </span>
+                </div>
                 <div id="daily-value" class="summary-value">—</div>
                 <div id="daily-detail" class="summary-detail"></div>
             </article>
@@ -113,11 +146,51 @@
                         <tr>
                             <th>Indoor metric</th>
                             <th>Outdoor metric</th>
-                            <th>Pearson r</th>
-                            <th>Spearman ρ</th>
-                            <th>Change Δr</th>
-                            <th>Best outdoor lead</th>
-                            <th>Samples</th>
+                            <th>
+                                <span class="field-label">
+                                    Pearson r
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain Pearson correlation" aria-describedby="help-pearson">i</button>
+                                        <span id="help-pearson" class="help-text" role="tooltip">Measures how closely two values follow a straight-line relationship. +1 means they rise together perfectly, -1 means one falls as the other rises, and 0 means no linear relationship.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Spearman ρ
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain Spearman correlation" aria-describedby="help-spearman">i</button>
+                                        <span id="help-spearman" class="help-text" role="tooltip">Compares the rank order of values rather than their exact size. It can find consistent increasing or decreasing relationships that are curved and is less sensitive to extreme values than Pearson correlation.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Change Δr
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain change correlation" aria-describedby="help-change-correlation">i</button>
+                                        <span id="help-change-correlation" class="help-text" role="tooltip">Correlation between one reading's change from the previous reading and the matching outdoor change. This asks whether the measurements move together, instead of merely being high or low at the same time of day.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Best outdoor lead
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain best outdoor lead" aria-describedby="help-outdoor-lead">i</button>
+                                        <span id="help-outdoor-lead" class="help-text" role="tooltip">The tested delay where an outdoor change aligns most strongly with a later indoor change. “No delay” means the strongest match occurred in the same time block.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Samples
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain correlation samples" aria-describedby="help-samples">i</button>
+                                        <span id="help-samples" class="help-text" role="tooltip">The number of aligned indoor/outdoor time blocks used for this relationship. More samples usually improve stability, but nearby readings are related to each other and are not fully independent evidence.</span>
+                                    </span>
+                                </span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="relationship-body"></tbody>
@@ -133,10 +206,42 @@
                     <thead>
                         <tr>
                             <th>Indoor metric</th>
-                            <th>Daily-cycle R²</th>
-                            <th>Typical amplitude</th>
-                            <th>Estimated peak time</th>
-                            <th>Samples</th>
+                            <th>
+                                <span class="field-label">
+                                    Daily-cycle R²
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain daily cycle R squared" aria-describedby="help-r-squared">i</button>
+                                        <span id="help-r-squared" class="help-text" role="tooltip">The share of observed variation described by a smooth repeating 24-hour pattern. A value of 0.70 means about 70% follows that daily rhythm; it does not identify what causes the rhythm.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Typical amplitude
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain typical amplitude" aria-describedby="help-amplitude">i</button>
+                                        <span id="help-amplitude" class="help-text" role="tooltip">The estimated distance from the daily average to the cycle's peak. The modeled peak-to-low swing is approximately twice this value.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Estimated peak time
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain estimated peak time" aria-describedby="help-peak-time">i</button>
+                                        <span id="help-peak-time" class="help-text" role="tooltip">The local time when the fitted daily cycle reaches its highest value. This summarizes the overall period and may not match every individual day.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Samples
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain daily pattern samples" aria-describedby="help-daily-samples">i</button>
+                                        <span id="help-daily-samples" class="help-text" role="tooltip">The number of indoor observations used to estimate the daily pattern. Missing periods and limited day coverage can make the estimated peak and amplitude less reliable.</span>
+                                    </span>
+                                </span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="daily-body"></tbody>
