@@ -359,23 +359,23 @@
                 currentRange = button.dataset.range;
                 loadHistory();
             });
+        });
 
-            selectAllButton.addEventListener("click", function () {
-                selectedSeries = new Set(chart.data.datasets.map(function (dataset) {
-                    return dataset.seriesKey;
-                }));
-                applySelection();
-            });
+        selectAllButton.addEventListener("click", function () {
+            selectedSeries = new Set(chart.data.datasets.map(function (dataset) {
+                return dataset.seriesKey;
+            }));
+            applySelection();
+        });
 
-            clearAllButton.addEventListener("click", function () {
-                selectedSeries = new Set();
-                applySelection();
-            });
+        clearAllButton.addEventListener("click", function () {
+            selectedSeries = new Set();
+            applySelection();
+        });
 
-            outlierButton.addEventListener("click", function () {
-                removeOutliers = !removeOutliers;
-                renderChart();
-            });
+        outlierButton.addEventListener("click", function () {
+            removeOutliers = !removeOutliers;
+            renderChart();
         });
 
         unitButton.addEventListener("click", function () {
