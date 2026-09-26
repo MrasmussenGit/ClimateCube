@@ -16,6 +16,8 @@
         .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
         .header-actions, .controls { display: flex; flex-wrap: wrap; gap: 8px; }
         .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        .button-link { padding: 10px 16px; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; text-decoration: none; }
+        .button-link:hover { background: var(--button); color: var(--page); }
         h1 { margin-bottom: 6px; }
         .details, .status, .method-note { color: var(--muted); }
         button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; cursor: pointer; }
@@ -96,6 +98,7 @@
             <p id="timezone-details" class="details"></p>
         </div>
         <div class="header-actions">
+            <a class="button-link" href="{{ url_for('insights_comparison') }}">Compare rooms</a>
             <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
         </div>
     </div>

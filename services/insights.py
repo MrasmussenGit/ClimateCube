@@ -341,12 +341,28 @@ def _daily_pattern(observations, metric, timezone_info):
     }
 
 
-def analyze_correlations(dataset, timezone_name="UTC"):
+def analyze_correlations(
+    dataset,
+    timezone_name="UTC",
+    indoor_keys=None,
+    outdoor_keys=None,
+    include_daily_patterns=True
+):
     observations = [
         observation
         for observation in dataset["observations"]
         if observation.get("outdoor") is not None
     ]
+    indoor_metrics = {
+        key: definition
+        for key, definition in dataset["indoor_metrics"].items()
+        if indoor_keys is None or key in indoor_keys
+    }
+    outdoor_metrics = {
+        key: definition
+        for key, definition in OUTDOOR_METRICS.items()
+        if outdoor_keys is None or key in outdoor_keys
+    }
     try:
         timezone_info = ZoneInfo(timezone_name)
     except (ZoneInfoNotFoundError, ValueError):
@@ -359,11 +375,11 @@ def analyze_correlations(dataset, timezone_name="UTC"):
     ]
     indoor_change_maps = {
         metric: _changes(observations, timestamps, "indoor", metric)
-        for metric in dataset["indoor_metrics"]
+        for metric in indoor_metrics
     }
     outdoor_change_maps = {
         metric: _changes(observations, timestamps, "outdoor", metric)
-        for metric in OUTDOOR_METRICS
+        for metric in outdoor_metrics
     }
     populated_change_maps = [
         changes
@@ -392,8 +408,8 @@ def analyze_correlations(dataset, timezone_name="UTC"):
     }
     relationships = []
 
-    for indoor_key, indoor_definition in dataset["indoor_metrics"].items():
-        for outdoor_key, outdoor_definition in OUTDOOR_METRICS.items():
+    for indoor_key, indoor_definition in indoor_metrics.items():
+        for outdoor_key, outdoor_definition in outdoor_metrics.items():
             points = []
 
             for observation in observations:
@@ -480,15 +496,16 @@ def analyze_correlations(dataset, timezone_name="UTC"):
         relationship["points"] = []
 
     daily_patterns = []
-    for metric, definition in dataset["indoor_metrics"].items():
-        pattern = _daily_pattern(observations, metric, timezone_info)
-        if pattern:
-            daily_patterns.append({
-                "metric": metric,
-                "label": definition["label"],
-                "unit": definition["unit"],
-                **pattern
-            })
+    if include_daily_patterns:
+        for metric, definition in indoor_metrics.items():
+            pattern = _daily_pattern(observations, metric, timezone_info)
+            if pattern:
+                daily_patterns.append({
+                    "metric": metric,
+                    "label": definition["label"],
+                    "unit": definition["unit"],
+                    **pattern
+                })
     daily_patterns.sort(
         key=lambda pattern: pattern["r_squared"] or 0,
         reverse=True

@@ -254,6 +254,9 @@
         <a class="history-link" href="{{ url_for('temperature_comparison') }}">
             Compare rooms and outdoor weather →
         </a>
+        <a class="history-link insights-link" href="{{ url_for('insights_comparison') }}">
+            Compare room insights →
+        </a>
     {% endif %}
 
     <div id="storage-status" class="storage-status{% if storage_info.status != 'normal' %} {{ storage_info.status }}{% endif %}" aria-label="Server storage">

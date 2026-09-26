@@ -17,6 +17,8 @@
         .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         .header-actions, .controls, .selector-actions { display: flex; flex-wrap: wrap; gap: 8px; }
         .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        .button-link { padding: 10px 16px; border-radius: 8px; background: var(--control); color: var(--text); font-size: 15px; text-decoration: none; }
+        .button-link:hover { background: var(--button); color: var(--page); }
         .controls { margin: 24px 0 18px; }
         .outlier-control { position: relative; display: flex; }
         .outlier-control #outlier-button { padding-right: 42px; }
@@ -58,6 +60,7 @@
             <p id="timezone-details" class="details"></p>
         </div>
         <div class="header-actions">
+            <a class="button-link" href="{{ url_for('insights_comparison') }}">Compare insights</a>
             <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
             <button id="unit-button" type="button">Show °F</button>
         </div>

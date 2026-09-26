@@ -66,6 +66,60 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(len(result["daily_patterns"]), 1)
         self.assertEqual(result["coverage"]["aligned_percent"], 100.0)
 
+    def test_analysis_can_limit_metrics_for_room_comparison(self):
+        observations = []
+        start = datetime(2026, 1, 1)
+
+        for index in range(16):
+            observations.append({
+                "reading_time": (
+                    start + timedelta(minutes=index * 15)
+                ).strftime("%Y-%m-%d %H:%M:%S"),
+                "indoor": {
+                    "temperature_c": 20 + index,
+                    "humidity_pct": 40 + index
+                },
+                "outdoor": {
+                    "temperature_c": 10 + index,
+                    "humidity_pct": 50 + index,
+                    "dew_point_c": None,
+                    "pressure_hpa": None,
+                    "precipitation_mm": None,
+                    "wind_speed_kmh": None,
+                    "cloud_cover_pct": None
+                }
+            })
+
+        result = analyze_correlations(
+            {
+                "observations": observations,
+                "indoor_metrics": {
+                    "temperature_c": {
+                        "label": "Indoor temperature",
+                        "unit": "°C",
+                        "display_order": 10
+                    },
+                    "humidity_pct": {
+                        "label": "Indoor humidity",
+                        "unit": "%",
+                        "display_order": 20
+                    }
+                },
+                "sensor_bucket_count": len(observations),
+                "aligned_bucket_count": len(observations)
+            },
+            indoor_keys={"temperature_c"},
+            outdoor_keys={"temperature_c"},
+            include_daily_patterns=False
+        )
+
+        self.assertEqual(len(result["relationships"]), 1)
+        self.assertEqual(
+            result["relationships"][0]["id"],
+            "temperature_c__temperature_c"
+        )
+        self.assertEqual(result["daily_patterns"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

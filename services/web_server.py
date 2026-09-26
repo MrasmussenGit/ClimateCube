@@ -304,6 +304,19 @@ def insights(sensor_id):
     )
 
 
+@app.route("/insights")
+def insights_comparison():
+    sensors = [
+        sensor
+        for sensor in get_sensors()
+        if sensor["active_flag"]
+    ]
+    return render_template(
+        "insights_comparison.html",
+        sensors=sensors
+    )
+
+
 @app.route("/history")
 def temperature_comparison():
     return render_template("comparison.html")
@@ -332,6 +345,87 @@ def temperature_comparison_api():
         "readings": readings,
         "outdoor": outdoor,
         "weather": get_latest_weather()
+    })
+
+
+@app.route("/api/insights")
+def insights_comparison_api():
+    range_name = request.args.get("range", "30d")
+
+    if range_name not in INSIGHT_RANGES:
+        return jsonify({
+            "error": "Invalid range",
+            "valid_ranges": list(INSIGHT_RANGES)
+        }), 400
+
+    timezone_name = request.args.get("timezone", "UTC")
+
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return jsonify({
+            "error": "Invalid timezone"
+        }), 400
+
+    sensors = [
+        sensor
+        for sensor in get_sensors()
+        if sensor["active_flag"]
+    ]
+    requested_values = request.args.getlist("sensor_id")
+
+    if requested_values:
+        try:
+            requested_ids = {
+                int(sensor_id)
+                for sensor_id in requested_values
+            }
+        except ValueError:
+            return jsonify({
+                "error": "Invalid sensor selection"
+            }), 400
+
+        available_ids = {
+            sensor["sensor_id"]
+            for sensor in sensors
+        }
+        if not requested_ids.issubset(available_ids):
+            return jsonify({
+                "error": "Invalid sensor selection"
+            }), 400
+        sensors = [
+            sensor
+            for sensor in sensors
+            if sensor["sensor_id"] in requested_ids
+        ]
+
+    rooms = []
+    for sensor in sensors:
+        dataset = get_correlation_observations(
+            sensor["sensor_id"],
+            range_name
+        )
+        analysis = analyze_correlations(
+            dataset,
+            timezone_name,
+            indoor_keys={"temperature_c"},
+            outdoor_keys={"temperature_c"},
+            include_daily_patterns=False
+        )
+        rooms.append({
+            "sensor": sensor,
+            "coverage": analysis["coverage"],
+            "relationship": (
+                analysis["relationships"][0]
+                if analysis["relationships"]
+                else None
+            )
+        })
+
+    return jsonify({
+        "range": range_name,
+        "timezone": timezone_name,
+        "rooms": rooms
     })
 
 
