@@ -343,6 +343,10 @@ def _daily_pattern(observations, metric, timezone_info):
 
 def _sunlight_effect(observations, timezone_info):
     samples = []
+    daylight_sample_count = 0
+    fallback_sample_count = 0
+    sunrise_hours = []
+    sunset_hours = []
 
     for observation in observations:
         indoor_temperature = observation["indoor"].get("temperature_c")
@@ -355,11 +359,34 @@ def _sunlight_effect(observations, timezone_info):
         )):
             continue
 
-        timestamp = datetime.fromisoformat(
+        timestamp_utc = datetime.fromisoformat(
             observation["reading_time"]
-        ).replace(tzinfo=timezone.utc).astimezone(timezone_info)
-        if not 8 <= timestamp.hour < 18:
-            continue
+        ).replace(tzinfo=timezone.utc)
+        timestamp = timestamp_utc.astimezone(timezone_info)
+        daylight = observation.get("daylight")
+
+        if daylight is not None:
+            sunrise_utc = datetime.fromisoformat(
+                daylight["sunrise_ts"]
+            ).replace(tzinfo=timezone.utc)
+            sunset_utc = datetime.fromisoformat(
+                daylight["sunset_ts"]
+            ).replace(tzinfo=timezone.utc)
+            if not sunrise_utc <= timestamp_utc <= sunset_utc:
+                continue
+            sunrise_local = sunrise_utc.astimezone(timezone_info)
+            sunset_local = sunset_utc.astimezone(timezone_info)
+            sunrise_hours.append(
+                sunrise_local.hour + sunrise_local.minute / 60
+            )
+            sunset_hours.append(
+                sunset_local.hour + sunset_local.minute / 60
+            )
+            daylight_sample_count += 1
+        else:
+            if not 8 <= timestamp.hour < 18:
+                continue
+            fallback_sample_count += 1
 
         samples.append({
             "x": float(outdoor_temperature),
@@ -436,10 +463,35 @@ def _sunlight_effect(observations, timezone_info):
         (value - estimate) ** 2
         for value, estimate in zip(indoor_values, fitted)
     )
+    if daylight_sample_count and fallback_sample_count:
+        daylight_method = "mixed"
+    elif daylight_sample_count:
+        daylight_method = "sunrise_sunset"
+    else:
+        daylight_method = "fixed_hours"
 
     return {
+        "daylight_method": daylight_method,
+        "daylight_sample_count": daylight_sample_count,
+        "fallback_sample_count": fallback_sample_count,
         "daylight_start_hour": 8,
         "daylight_end_hour": 18,
+        "earliest_sunrise_hour": (
+            _round(min(sunrise_hours), 2)
+            if sunrise_hours else None
+        ),
+        "latest_sunrise_hour": (
+            _round(max(sunrise_hours), 2)
+            if sunrise_hours else None
+        ),
+        "earliest_sunset_hour": (
+            _round(min(sunset_hours), 2)
+            if sunset_hours else None
+        ),
+        "latest_sunset_hour": (
+            _round(max(sunset_hours), 2)
+            if sunset_hours else None
+        ),
         "sample_count": len(samples),
         "r_squared": _round(max(0, 1 - residual_variation / total_variation)),
         "cloud_effect_c": _round(cloud_effect),

@@ -203,7 +203,7 @@
 
         <section class="panel">
             <h2>Sun and cloud effect on indoor temperature</h2>
-            <p class="method-note">This separate analysis compares indoor temperature with outdoor temperature and cloud cover at the same time. It uses only local observations from 8 AM through 6 PM so cloud cover is a useful proxy for sunshine.</p>
+            <p class="method-note">This separate analysis compares indoor temperature with outdoor temperature and cloud cover at the same time. It uses observations between each date's sunrise and sunset so cloud cover is a useful proxy for sunshine. When daylight data is unavailable, it falls back to local observations from 8 AM through 6 PM.</p>
             <div id="sunlight-content" class="sunlight-layout">
                 <div id="sunlight-chart" class="sunlight-chart"></div>
                 <aside class="sunlight-summary">
@@ -741,6 +741,25 @@
                 return;
             }
 
+            let daylightDescription;
+            if (effect.daylight_method === "sunrise_sunset") {
+                daylightDescription = "All samples use actual sunrise and sunset";
+            } else if (effect.daylight_method === "mixed") {
+                daylightDescription = effect.daylight_sample_count +
+                    " samples use actual daylight; " +
+                    effect.fallback_sample_count + " use the 8 AM–6 PM fallback";
+            } else {
+                daylightDescription = "Sunrise and sunset were unavailable; all samples use the 8 AM–6 PM fallback";
+            }
+            if (effect.earliest_sunrise_hour !== null) {
+                daylightDescription += ". Sunrise ranged from " +
+                    formatHour(effect.earliest_sunrise_hour) + " to " +
+                    formatHour(effect.latest_sunrise_hour) +
+                    "; sunset ranged from " +
+                    formatHour(effect.earliest_sunset_hour) + " to " +
+                    formatHour(effect.latest_sunset_hour);
+            }
+
             const absoluteEffect = Math.abs(effect.cloud_effect_c);
             if (absoluteEffect < 0.2) {
                 sunlightValue.textContent = "Little difference";
@@ -764,7 +783,8 @@
                 Math.round(effect.r_squared * 100) + "% · observed cloud cover " +
                 effect.cloud_min_pct.toFixed(0) + "–" +
                 effect.cloud_max_pct.toFixed(0) +
-                "%. This is an association; HVAC, window direction, season, and delayed heating may also contribute.";
+                "%. " + daylightDescription +
+                ". This is an association; HVAC, window direction, season, and delayed heating may also contribute.";
 
             if (typeof Chart === "undefined") {
                 sunlightChart.appendChild(createEmptyState(

@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from bisect import bisect_left
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -30,6 +30,54 @@ def get_connection():
     return conn
 
 
+def match_daylight(daylight_by_day, reading_time, weather):
+    candidate_days = (
+        reading_time.date(),
+        reading_time.date() - timedelta(days=1)
+    )
+    candidates = [
+        candidate
+        for day in candidate_days
+        for candidate in daylight_by_day.get(day.isoformat(), [])
+        if candidate["provider"] == weather["provider"]
+    ]
+    containing_candidates = [
+        candidate
+        for candidate in candidates
+        if datetime.fromisoformat(candidate["sunrise_ts"])
+        <= reading_time
+        <= datetime.fromisoformat(candidate["sunset_ts"])
+    ]
+    same_day_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["day"] == reading_time.date().isoformat()
+    ]
+    relevant_candidates = (
+        containing_candidates
+        or same_day_candidates
+        or candidates
+    )
+    closest = min(
+        relevant_candidates,
+        key=lambda candidate: (
+            (candidate["latitude"] - weather["latitude"]) ** 2
+            + (candidate["longitude"] - weather["longitude"]) ** 2
+        ),
+        default=None
+    )
+    if closest is None or not (
+        abs(closest["latitude"] - weather["latitude"]) < 0.1
+        and abs(closest["longitude"] - weather["longitude"]) < 0.1
+    ):
+        return None
+
+    return {
+        "sunrise_ts": closest["sunrise_ts"],
+        "sunset_ts": closest["sunset_ts"]
+    }
+
+
 def ensure_weather_schema():
     with get_connection() as conn:
         conn.executescript(
@@ -53,6 +101,19 @@ def ensure_weather_schema():
             );
             CREATE INDEX IF NOT EXISTS idx_weather_observation_time
             ON weather_observation(observed_ts);
+            CREATE TABLE IF NOT EXISTS weather_daylight (
+                daylight_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day DATE NOT NULL,
+                sunrise_ts DATETIME NOT NULL,
+                sunset_ts DATETIME NOT NULL,
+                insert_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                provider TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                UNIQUE(provider, day, latitude, longitude)
+            );
+            CREATE INDEX IF NOT EXISTS idx_weather_daylight_day
+            ON weather_daylight(day);
             CREATE TABLE IF NOT EXISTS app_setting (
                 setting_key TEXT PRIMARY KEY,
                 setting_value TEXT NOT NULL
@@ -965,6 +1026,9 @@ def get_correlation_observations(sensor_id, range_name):
                     """
                     SELECT
                         observed_ts,
+                        provider,
+                        latitude,
+                        longitude,
                         temperature_c,
                         humidity_pct,
                         dew_point_c,
@@ -983,8 +1047,27 @@ def get_correlation_observations(sensor_id, range_name):
                         indoor_rows[-1]["reading_time"]
                     )
                 ).fetchall()
+                daylight_rows = conn.execute(
+                    """
+                    SELECT
+                        day,
+                        sunrise_ts,
+                        sunset_ts,
+                        provider,
+                        latitude,
+                        longitude
+                    FROM weather_daylight
+                    WHERE date(day) BETWEEN date(?, '-1 day') AND date(?)
+                    ORDER BY day
+                    """,
+                    (
+                        indoor_rows[0]["reading_time"],
+                        indoor_rows[-1]["reading_time"]
+                    )
+                ).fetchall()
             else:
                 weather_rows = []
+                daylight_rows = []
 
         indoor_metrics = {
             "temperature_c": {
@@ -1019,6 +1102,9 @@ def get_correlation_observations(sensor_id, range_name):
             datetime.fromisoformat(row["observed_ts"])
             for row in weather
         ]
+        daylight_by_day = {}
+        for row in daylight_rows:
+            daylight_by_day.setdefault(row["day"], []).append(dict(row))
         observations = []
 
         for row in indoor_rows:
@@ -1040,6 +1126,7 @@ def get_correlation_observations(sensor_id, range_name):
                 default=None
             )
             outdoor = None
+            daylight = None
 
             if nearest is not None and abs(
                 datetime.fromisoformat(nearest["observed_ts"]) - reading_time
@@ -1056,6 +1143,11 @@ def get_correlation_observations(sensor_id, range_name):
                         "cloud_cover_pct"
                     )
                 }
+                daylight = match_daylight(
+                    daylight_by_day,
+                    reading_time,
+                    nearest
+                )
 
             indoor = {
                 "temperature_c": row["temperature_c"],
@@ -1066,7 +1158,8 @@ def get_correlation_observations(sensor_id, range_name):
             observations.append({
                 "reading_time": row["reading_time"],
                 "indoor": indoor,
-                "outdoor": outdoor
+                "outdoor": outdoor,
+                "daylight": daylight
             })
 
         return {

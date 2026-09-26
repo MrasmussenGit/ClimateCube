@@ -2,7 +2,7 @@ import json
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -14,6 +14,8 @@ DB_FILE = PROJECT_DIR / "data" / "climatecube.db"
 API_URL = "https://api.open-meteo.com/v1/forecast"
 PROVIDER = "Open-Meteo"
 COLLECTION_INTERVAL_SEC = 900
+DAYLIGHT_HISTORY_DAYS = 92
+DAYLIGHT_FORECAST_DAYS = 7
 CURRENT_FIELDS = (
     "temperature_2m",
     "relative_humidity_2m",
@@ -57,6 +59,21 @@ def ensure_schema():
             CREATE INDEX IF NOT EXISTS idx_weather_observation_time
             ON weather_observation(observed_ts);
 
+            CREATE TABLE IF NOT EXISTS weather_daylight (
+                daylight_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day DATE NOT NULL,
+                sunrise_ts DATETIME NOT NULL,
+                sunset_ts DATETIME NOT NULL,
+                insert_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                provider TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                UNIQUE(provider, day, latitude, longitude)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_weather_daylight_day
+            ON weather_daylight(day);
+
             CREATE TABLE IF NOT EXISTS app_setting (
                 setting_key TEXT PRIMARY KEY,
                 setting_value TEXT NOT NULL
@@ -99,31 +116,86 @@ def get_location():
     }
 
 
-def build_api_url(location):
+def daylight_backfill_needed(location):
+    ensure_schema()
+    target_day = (
+        datetime.now(timezone.utc).date()
+        - timedelta(days=DAYLIGHT_HISTORY_DAYS - 2)
+    ).isoformat()
+
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT MIN(day) AS earliest_day
+            FROM weather_daylight
+            WHERE provider = ?
+              AND ABS(latitude - ?) < 0.1
+              AND ABS(longitude - ?) < 0.1
+            """,
+            (
+                PROVIDER,
+                location["latitude"],
+                location["longitude"]
+            )
+        ).fetchone()
+
+    return row["earliest_day"] is None or row["earliest_day"] > target_day
+
+
+def build_api_url(location, daylight_history_days=1):
     parameters = {
         "latitude": location["latitude"],
         "longitude": location["longitude"],
         "current": ",".join(CURRENT_FIELDS),
+        "daily": "sunrise,sunset",
+        "past_days": daylight_history_days,
+        "forecast_days": DAYLIGHT_FORECAST_DAYS,
         "timeformat": "unixtime",
         "timezone": "GMT"
     }
     return f"{API_URL}?{urlencode(parameters)}"
 
 
-def fetch_current_weather(location):
-    with urlopen(build_api_url(location), timeout=20) as response:
-        payload = json.load(response)
-
-    current = payload["current"]
-    observed_ts = datetime.fromtimestamp(
-        current["time"],
+def _format_utc_timestamp(timestamp):
+    return datetime.fromtimestamp(
+        timestamp,
         tz=timezone.utc
     ).strftime("%Y-%m-%d %H:%M:%S")
 
-    return {
-        "observed_ts": observed_ts,
-        "latitude": float(payload.get("latitude", location["latitude"])),
-        "longitude": float(payload.get("longitude", location["longitude"])),
+
+def parse_weather_payload(payload, location):
+    latitude = float(payload.get("latitude", location["latitude"]))
+    longitude = float(payload.get("longitude", location["longitude"]))
+    current = payload["current"]
+    daily = payload["daily"]
+    daylight = []
+    daily_lengths = {
+        len(daily[field])
+        for field in ("time", "sunrise", "sunset")
+    }
+    if len(daily_lengths) != 1:
+        raise ValueError("Open-Meteo returned mismatched daylight arrays")
+
+    for day, sunrise, sunset in zip(
+        daily["time"],
+        daily["sunrise"],
+        daily["sunset"]
+    ):
+        daylight.append({
+            "day": datetime.fromtimestamp(
+                day,
+                tz=timezone.utc
+            ).date().isoformat(),
+            "sunrise_ts": _format_utc_timestamp(sunrise),
+            "sunset_ts": _format_utc_timestamp(sunset),
+            "latitude": latitude,
+            "longitude": longitude
+        })
+
+    observation = {
+        "observed_ts": _format_utc_timestamp(current["time"]),
+        "latitude": latitude,
+        "longitude": longitude,
         "temperature_c": float(current["temperature_2m"]),
         "humidity_pct": float(current["relative_humidity_2m"]),
         "dew_point_c": current.get("dew_point_2m"),
@@ -133,9 +205,20 @@ def fetch_current_weather(location):
         "cloud_cover_pct": current.get("cloud_cover"),
         "weather_code": current.get("weather_code")
     }
+    return observation, daylight
 
 
-def store_observation(observation):
+def fetch_current_weather(location, daylight_history_days=1):
+    with urlopen(
+        build_api_url(location, daylight_history_days),
+        timeout=20
+    ) as response:
+        payload = json.load(response)
+
+    return parse_weather_payload(payload, location)
+
+
+def store_weather(observation, daylight):
     with get_connection() as connection:
         connection.execute(
             """
@@ -180,6 +263,38 @@ def store_observation(observation):
                 observation["weather_code"]
             )
         )
+        connection.executemany(
+            """
+            INSERT INTO weather_daylight (
+                day,
+                sunrise_ts,
+                sunset_ts,
+                provider,
+                latitude,
+                longitude
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider, day, latitude, longitude)
+            DO UPDATE SET
+                sunrise_ts = excluded.sunrise_ts,
+                sunset_ts = excluded.sunset_ts,
+                insert_ts = CURRENT_TIMESTAMP
+            """,
+            [
+                (
+                    day["day"],
+                    day["sunrise_ts"],
+                    day["sunset_ts"],
+                    PROVIDER,
+                    day["latitude"],
+                    day["longitude"]
+                )
+                for day in daylight
+            ]
+        )
+
+
+def store_observation(observation):
+    store_weather(observation, [])
 
 
 def collect_once():
@@ -188,10 +303,16 @@ def collect_once():
     if location is None:
         return False
 
-    observation = fetch_current_weather(location)
-    store_observation(observation)
+    history_days = (
+        DAYLIGHT_HISTORY_DAYS
+        if daylight_backfill_needed(location)
+        else 1
+    )
+    observation, daylight = fetch_current_weather(location, history_days)
+    store_weather(observation, daylight)
     print(
-        f"Stored outdoor weather for {observation['observed_ts']} UTC",
+        f"Stored outdoor weather for {observation['observed_ts']} UTC "
+        f"and {len(daylight)} daylight records",
         flush=True
     )
     return True

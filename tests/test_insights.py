@@ -184,9 +184,70 @@ class CorrelationTests(unittest.TestCase):
 
         effect = result["sunlight_effect"]
         self.assertEqual(effect["sample_count"], 30)
+        self.assertEqual(effect["daylight_method"], "fixed_hours")
         self.assertAlmostEqual(effect["cloud_effect_c"], -2.0)
         self.assertAlmostEqual(effect["outdoor_coefficient"], 0.4)
         self.assertAlmostEqual(effect["r_squared"], 1.0)
+
+    def test_sunlight_effect_uses_daily_sunrise_and_sunset(self):
+        observations = []
+        start = datetime(2026, 6, 1)
+
+        for day in range(3):
+            sunrise = (
+                start + timedelta(days=day, hours=10)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            sunset = (
+                start + timedelta(days=day, hours=14)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            for hour in range(8, 18):
+                outdoor_temperature = 10 + hour + day * 0.2
+                cloud_cover = (hour * 29 + day * 17) % 101
+                observations.append({
+                    "reading_time": (
+                        start + timedelta(days=day, hours=hour)
+                    ).strftime("%Y-%m-%d %H:%M:%S"),
+                    "indoor": {
+                        "temperature_c": (
+                            16
+                            + 0.5 * outdoor_temperature
+                            - 1.5 * cloud_cover / 100
+                        )
+                    },
+                    "outdoor": {
+                        "temperature_c": outdoor_temperature,
+                        "humidity_pct": None,
+                        "dew_point_c": None,
+                        "pressure_hpa": None,
+                        "precipitation_mm": None,
+                        "wind_speed_kmh": None,
+                        "cloud_cover_pct": cloud_cover
+                    },
+                    "daylight": {
+                        "sunrise_ts": sunrise,
+                        "sunset_ts": sunset
+                    }
+                })
+
+        result = analyze_correlations({
+            "observations": observations,
+            "indoor_metrics": {
+                "temperature_c": {
+                    "label": "Indoor temperature",
+                    "unit": "°C",
+                    "display_order": 10
+                }
+            },
+            "sensor_bucket_count": len(observations),
+            "aligned_bucket_count": len(observations)
+        })
+
+        effect = result["sunlight_effect"]
+        self.assertEqual(effect["sample_count"], 15)
+        self.assertEqual(effect["daylight_sample_count"], 15)
+        self.assertEqual(effect["fallback_sample_count"], 0)
+        self.assertEqual(effect["daylight_method"], "sunrise_sunset")
+        self.assertAlmostEqual(effect["cloud_effect_c"], -1.5)
 
 
 if __name__ == "__main__":
