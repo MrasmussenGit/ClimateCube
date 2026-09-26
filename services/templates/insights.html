@@ -549,6 +549,19 @@
             });
         }
 
+        async function settleChartLayout() {
+            if (results.hidden || scatterCharts.length === 0) return;
+            if (document.fonts && document.fonts.ready) {
+                await document.fonts.ready;
+            }
+            await nextFrame();
+            await nextFrame();
+            scatterCharts.forEach(function (chart) {
+                chart.resize();
+                chart.update("none");
+            });
+        }
+
         function renderSummary(data) {
             const strongest = data.relationships.find(function (relationship) {
                 return relationship.change_correlation !== null;
@@ -686,6 +699,7 @@
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
+                            animation: false,
                             parsing: false,
                             interaction: { mode: "nearest", intersect: false },
                             scales: {
@@ -846,6 +860,7 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        animation: false,
                         parsing: false,
                         interaction: { mode: "nearest", intersect: false },
                         plugins: {
@@ -988,6 +1003,7 @@
                     : "The insights page encountered an unexpected error while preparing the data.";
             } finally {
                 finishLoading();
+                await settleChartLayout();
             }
         }
 
