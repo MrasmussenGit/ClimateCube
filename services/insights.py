@@ -341,12 +341,129 @@ def _daily_pattern(observations, metric, timezone_info):
     }
 
 
+def _sunlight_effect(observations, timezone_info):
+    samples = []
+
+    for observation in observations:
+        indoor_temperature = observation["indoor"].get("temperature_c")
+        outdoor_temperature = observation["outdoor"].get("temperature_c")
+        cloud_cover = observation["outdoor"].get("cloud_cover_pct")
+        if not all(_finite(value) for value in (
+            indoor_temperature,
+            outdoor_temperature,
+            cloud_cover
+        )):
+            continue
+
+        timestamp = datetime.fromisoformat(
+            observation["reading_time"]
+        ).replace(tzinfo=timezone.utc).astimezone(timezone_info)
+        if not 8 <= timestamp.hour < 18:
+            continue
+
+        samples.append({
+            "x": float(outdoor_temperature),
+            "y": float(indoor_temperature),
+            "cloud": float(cloud_cover),
+            "t": observation["reading_time"]
+        })
+
+    if len(samples) < MIN_CORRELATION_SAMPLES:
+        return None
+
+    outdoor_values = [sample["x"] for sample in samples]
+    cloud_fractions = [sample["cloud"] / 100 for sample in samples]
+    indoor_values = [sample["y"] for sample in samples]
+    matrix = [
+        [
+            len(samples),
+            sum(outdoor_values),
+            sum(cloud_fractions)
+        ],
+        [
+            sum(outdoor_values),
+            sum(value ** 2 for value in outdoor_values),
+            sum(
+                outdoor * cloud
+                for outdoor, cloud in zip(
+                    outdoor_values,
+                    cloud_fractions
+                )
+            )
+        ],
+        [
+            sum(cloud_fractions),
+            sum(
+                outdoor * cloud
+                for outdoor, cloud in zip(
+                    outdoor_values,
+                    cloud_fractions
+                )
+            ),
+            sum(value ** 2 for value in cloud_fractions)
+        ]
+    ]
+    vector = [
+        sum(indoor_values),
+        sum(
+            outdoor * indoor
+            for outdoor, indoor in zip(outdoor_values, indoor_values)
+        ),
+        sum(
+            cloud * indoor
+            for cloud, indoor in zip(cloud_fractions, indoor_values)
+        )
+    ]
+    coefficients = _solve_three_by_three(matrix, vector)
+    if coefficients is None:
+        return None
+
+    intercept, outdoor_coefficient, cloud_effect = coefficients
+    fitted = [
+        intercept
+        + outdoor_coefficient * outdoor
+        + cloud_effect * cloud
+        for outdoor, cloud in zip(outdoor_values, cloud_fractions)
+    ]
+    mean_indoor = _mean(indoor_values)
+    total_variation = sum(
+        (value - mean_indoor) ** 2
+        for value in indoor_values
+    )
+    if total_variation == 0:
+        return None
+    residual_variation = sum(
+        (value - estimate) ** 2
+        for value, estimate in zip(indoor_values, fitted)
+    )
+
+    return {
+        "daylight_start_hour": 8,
+        "daylight_end_hour": 18,
+        "sample_count": len(samples),
+        "r_squared": _round(max(0, 1 - residual_variation / total_variation)),
+        "cloud_effect_c": _round(cloud_effect),
+        "outdoor_coefficient": _round(outdoor_coefficient),
+        "intercept": _round(intercept),
+        "outdoor_min_c": _round(min(outdoor_values)),
+        "outdoor_max_c": _round(max(outdoor_values)),
+        "cloud_min_pct": _round(min(sample["cloud"] for sample in samples), 1),
+        "cloud_max_pct": _round(max(sample["cloud"] for sample in samples), 1),
+        "reference_outdoor_c": _round(
+            sorted(outdoor_values)[len(outdoor_values) // 2],
+            1
+        ),
+        "points": _sample_points(samples)
+    }
+
+
 def analyze_correlations(
     dataset,
     timezone_name="UTC",
     indoor_keys=None,
     outdoor_keys=None,
-    include_daily_patterns=True
+    include_daily_patterns=True,
+    include_sunlight_effect=True
 ):
     observations = [
         observation
@@ -510,6 +627,11 @@ def analyze_correlations(
         key=lambda pattern: pattern["r_squared"] or 0,
         reverse=True
     )
+    sunlight_effect = (
+        _sunlight_effect(observations, timezone_info)
+        if include_sunlight_effect
+        else None
+    )
 
     sensor_count = dataset["sensor_bucket_count"]
     aligned_count = dataset["aligned_bucket_count"]
@@ -553,5 +675,6 @@ def analyze_correlations(
         },
         "relationships": relationships,
         "daily_patterns": daily_patterns,
+        "sunlight_effect": sunlight_effect,
         "warnings": warnings
     }

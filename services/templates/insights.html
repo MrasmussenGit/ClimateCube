@@ -53,6 +53,14 @@
         .learning-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 22px; }
         .learning-item { color: var(--muted); font-size: 13px; line-height: 1.45; }
         .learning-item strong { color: var(--text); }
+        .sunlight-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 18px; align-items: stretch; }
+        .sunlight-chart { height: 340px; }
+        .sunlight-summary { display: grid; align-content: start; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+        .sunlight-summary h3 { margin: 0; }
+        .sunlight-stat { font-size: 28px; font-weight: bold; }
+        .sunlight-detail { margin: 0; color: var(--muted); line-height: 1.5; }
+        .cloud-key { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+        .cloud-gradient { width: 110px; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #f4c542, #2471a3); }
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 14px; }
         th, td { padding: 10px 9px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
@@ -86,6 +94,8 @@
             .scatter-grid { grid-template-columns: 1fr; }
             .scatter-card { padding: 12px; }
             .scatter-canvas { height: 230px; }
+            .sunlight-layout { grid-template-columns: 1fr; }
+            .sunlight-chart { height: 280px; }
         }
     </style>
 </head>
@@ -189,6 +199,25 @@
                 </div>
             </aside>
             <div id="scatter-grid" class="scatter-grid"></div>
+        </section>
+
+        <section class="panel">
+            <h2>Sun and cloud effect on indoor temperature</h2>
+            <p class="method-note">This separate analysis compares indoor temperature with outdoor temperature and cloud cover at the same time. It uses only local observations from 8 AM through 6 PM so cloud cover is a useful proxy for sunshine.</p>
+            <div id="sunlight-content" class="sunlight-layout">
+                <div id="sunlight-chart" class="sunlight-chart"></div>
+                <aside class="sunlight-summary">
+                    <h3>Clear versus overcast</h3>
+                    <div id="sunlight-value" class="sunlight-stat">—</div>
+                    <p id="sunlight-detail" class="sunlight-detail"></p>
+                    <div class="cloud-key">
+                        <span>Clear</span>
+                        <span class="cloud-gradient" aria-hidden="true"></span>
+                        <span>Overcast</span>
+                    </div>
+                    <p id="sunlight-reliability" class="sunlight-detail"></p>
+                </aside>
+            </div>
         </section>
 
         <section class="panel">
@@ -324,6 +353,10 @@
         const dailyBody = document.getElementById("daily-body");
         const warningList = document.getElementById("warning-list");
         const dataNotice = document.getElementById("data-notice");
+        const sunlightChart = document.getElementById("sunlight-chart");
+        const sunlightValue = document.getElementById("sunlight-value");
+        const sunlightDetail = document.getElementById("sunlight-detail");
+        const sunlightReliability = document.getElementById("sunlight-reliability");
         let currentRange = "30d";
         let scatterCharts = [];
         let loadingTimers = [];
@@ -680,6 +713,160 @@
             });
         }
 
+        function cloudColor(cloudCover, opacity) {
+            const fraction = Math.max(0, Math.min(100, cloudCover)) / 100;
+            const clear = [244, 197, 66];
+            const cloudy = [36, 113, 163];
+            const channel = function (index) {
+                return Math.round(
+                    clear[index] + (cloudy[index] - clear[index]) * fraction
+                );
+            };
+            return "rgba(" + channel(0) + "," + channel(1) + "," +
+                channel(2) + "," + opacity + ")";
+        }
+
+        function renderSunlightEffect(effect) {
+            sunlightChart.replaceChildren();
+
+            if (!effect) {
+                sunlightChart.appendChild(createEmptyState(
+                    "Not enough daytime observations contain indoor temperature, outdoor temperature, and cloud cover for this analysis."
+                ));
+                sunlightValue.textContent = "Not available";
+                sunlightDetail.textContent =
+                    "At least 12 varying observations between 8 AM and 6 PM are required.";
+                sunlightReliability.textContent =
+                    "The existing two-variable insights above are unaffected.";
+                return;
+            }
+
+            const absoluteEffect = Math.abs(effect.cloud_effect_c);
+            if (absoluteEffect < 0.2) {
+                sunlightValue.textContent = "Little difference";
+                sunlightDetail.textContent =
+                    "At the same outdoor temperature, clear and overcast estimates differ by less than 0.2 °C.";
+            } else if (effect.cloud_effect_c < 0) {
+                sunlightValue.textContent = absoluteEffect.toFixed(1) + " °C warmer when clear";
+                sunlightDetail.textContent =
+                    "At the same outdoor temperature—for example " +
+                    effect.reference_outdoor_c.toFixed(1) +
+                    " °C—the model estimates a warmer room under clear skies than under complete cloud cover.";
+            } else {
+                sunlightValue.textContent = absoluteEffect.toFixed(1) + " °C warmer when overcast";
+                sunlightDetail.textContent =
+                    "At the same outdoor temperature—for example " +
+                    effect.reference_outdoor_c.toFixed(1) +
+                    " °C—the model estimates a warmer room under complete cloud cover than under clear skies.";
+            }
+            sunlightReliability.textContent =
+                effect.sample_count + " daytime samples · model R² " +
+                Math.round(effect.r_squared * 100) + "% · observed cloud cover " +
+                effect.cloud_min_pct.toFixed(0) + "–" +
+                effect.cloud_max_pct.toFixed(0) +
+                "%. This is an association; HVAC, window direction, season, and delayed heating may also contribute.";
+
+            if (typeof Chart === "undefined") {
+                sunlightChart.appendChild(createEmptyState(
+                    "The chart library did not load. Refresh the page or check the web server's internet connection."
+                ));
+                return;
+            }
+
+            const canvas = document.createElement("canvas");
+            sunlightChart.appendChild(canvas);
+            const estimate = function (outdoorTemperature, cloudFraction) {
+                return effect.intercept +
+                    effect.outdoor_coefficient * outdoorTemperature +
+                    effect.cloud_effect_c * cloudFraction;
+            };
+            const clearLine = [{
+                x: effect.outdoor_min_c,
+                y: estimate(effect.outdoor_min_c, 0)
+            }, {
+                x: effect.outdoor_max_c,
+                y: estimate(effect.outdoor_max_c, 0)
+            }];
+            const overcastLine = [{
+                x: effect.outdoor_min_c,
+                y: estimate(effect.outdoor_min_c, 1)
+            }, {
+                x: effect.outdoor_max_c,
+                y: estimate(effect.outdoor_max_c, 1)
+            }];
+
+            try {
+                scatterCharts.push(new Chart(canvas, {
+                    type: "scatter",
+                    data: {
+                        datasets: [{
+                            type: "scatter",
+                            label: "Daytime observations",
+                            data: effect.points,
+                            backgroundColor: effect.points.map(function (point) {
+                                return cloudColor(point.cloud, 0.7);
+                            }),
+                            pointRadius: 4
+                        }, {
+                            type: "line",
+                            label: "Estimated clear sky",
+                            data: clearLine,
+                            borderColor: "#f4c542",
+                            borderWidth: 3,
+                            pointRadius: 0
+                        }, {
+                            type: "line",
+                            label: "Estimated overcast",
+                            data: overcastLine,
+                            borderColor: "#2471a3",
+                            borderWidth: 3,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        parsing: false,
+                        interaction: { mode: "nearest", intersect: false },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function (context) {
+                                        const point = context.raw;
+                                        if (point.cloud === undefined) {
+                                            return context.dataset.label;
+                                        }
+                                        return "Indoor " + point.y.toFixed(1) + " °C · Outdoor " +
+                                            point.x.toFixed(1) + " °C · Cloud " +
+                                            point.cloud.toFixed(0) + "%";
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: "Outdoor temperature (°C)"
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: "Indoor temperature (°C)"
+                                }
+                            }
+                        }
+                    }
+                }));
+            } catch (error) {
+                console.error("Unable to render sunlight effect chart", error);
+                sunlightChart.replaceChildren(createEmptyState(
+                    "This chart could not be rendered. The estimated clear-versus-overcast difference is still shown beside it."
+                ));
+            }
+        }
+
         function renderRelationships(relationships) {
             relationshipBody.replaceChildren();
 
@@ -767,6 +954,7 @@
                 results.hidden = false;
                 await nextFrame();
                 renderScatterplots(data.relationships);
+                renderSunlightEffect(data.sunlight_effect);
                 status.classList.remove("error");
                 status.textContent = data.relationships.length
                     ? data.relationships.length + " indoor/outdoor relationships analyzed"

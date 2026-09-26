@@ -410,7 +410,8 @@ def insights_comparison_api():
             timezone_name,
             indoor_keys={"temperature_c"},
             outdoor_keys={"temperature_c"},
-            include_daily_patterns=False
+            include_daily_patterns=False,
+            include_sunlight_effect=False
         )
         rooms.append({
             "sensor": sensor,
