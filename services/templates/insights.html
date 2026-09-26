@@ -47,14 +47,15 @@
         .scatter-card h3 { margin: 0; font-size: 17px; }
         .scatter-meta { margin: 5px 0 12px; color: var(--muted); font-size: 13px; }
         .scatter-interpretation { min-height: 58px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text); font-size: 13px; line-height: 1.45; }
-        .scatter-canvas { height: 260px; }
+        .scatter-canvas { position: relative; width: 100%; min-width: 0; height: 260px; }
+        .scatter-canvas canvas, .sunlight-chart canvas { display: block; max-width: 100%; max-height: 100%; }
         .learning-card { margin: 14px 0 18px; padding: 16px 18px; border-left: 4px solid #2471a3; border-radius: 8px; background: var(--page); }
         .learning-card h3 { margin: 0 0 10px; font-size: 17px; }
         .learning-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 22px; }
         .learning-item { color: var(--muted); font-size: 13px; line-height: 1.45; }
         .learning-item strong { color: var(--text); }
         .sunlight-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 18px; align-items: stretch; }
-        .sunlight-chart { height: 340px; }
+        .sunlight-chart { position: relative; width: 100%; min-width: 0; height: 340px; }
         .sunlight-summary { display: grid; align-content: start; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
         .sunlight-summary h3 { margin: 0; }
         .sunlight-stat { font-size: 28px; font-weight: bold; }
@@ -557,7 +558,14 @@
             await nextFrame();
             await nextFrame();
             scatterCharts.forEach(function (chart) {
-                chart.resize();
+                const container = chart.canvas.parentElement;
+                const bounds = container.getBoundingClientRect();
+                if (bounds.width > 0 && bounds.height > 0) {
+                    chart.resize(
+                        Math.floor(bounds.width),
+                        Math.floor(bounds.height)
+                    );
+                }
                 chart.update("none");
             });
         }
