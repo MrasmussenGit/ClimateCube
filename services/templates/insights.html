@@ -10,8 +10,8 @@
             (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     </script>
     <style>
-        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --positive: #18794e; --negative: #b42318; --warning: #8a6500; --warning-bg: #fff4e5; }
-        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --positive: #70d6a0; --negative: #ff9b91; --warning: #ffd38a; --warning-bg: #3b2915; }
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --positive: #18794e; --negative: #b42318; --warning: #8a6500; --warning-bg: #fff4e5; --error: #b42318; --error-bg: #fff0ee; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --positive: #70d6a0; --negative: #ff9b91; --warning: #ffd38a; --warning-bg: #3b2915; --error: #ff9b91; --error-bg: #3b1d1b; }
         body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; }
         .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
         .header-actions, .controls { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -67,6 +67,12 @@
         .loading-title { font-weight: bold; }
         .loading-detail { color: var(--muted); font-size: 13px; line-height: 1.35; }
         .loading-elapsed { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+        .data-notice, .empty-state { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--muted); line-height: 1.45; }
+        .data-notice { margin: 0 0 18px; }
+        .data-notice strong, .empty-state strong { color: var(--text); }
+        .status.error { max-width: 620px; padding: 14px 16px; border: 1px solid var(--error); border-radius: 8px; background: var(--error-bg); color: var(--error); line-height: 1.45; }
+        .scatter-canvas .empty-state { box-sizing: border-box; display: grid; height: 100%; place-items: center; text-align: center; }
+        .empty-row td { padding: 20px 12px; color: var(--muted); text-align: center !important; white-space: normal; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @media (prefers-reduced-motion: reduce) {
             .loading-spinner { animation-duration: 1.8s; }
@@ -111,6 +117,7 @@
     <p id="status" class="status" hidden></p>
 
     <section id="results" hidden>
+        <div id="data-notice" class="data-notice" role="status" hidden></div>
         <div class="summary-grid">
             <article class="summary-card">
                 <div class="summary-label field-label">
@@ -313,6 +320,7 @@
         const relationshipBody = document.getElementById("relationship-body");
         const dailyBody = document.getElementById("daily-body");
         const warningList = document.getElementById("warning-list");
+        const dataNotice = document.getElementById("data-notice");
         let currentRange = "30d";
         let scatterCharts = [];
         let loadingTimers = [];
@@ -407,6 +415,38 @@
             cell.textContent = text;
             if (className) cell.className = className;
             row.appendChild(cell);
+        }
+
+        function appendEmptyRow(body, columnCount, message) {
+            const row = document.createElement("tr");
+            row.className = "empty-row";
+            const cell = document.createElement("td");
+            cell.colSpan = columnCount;
+            cell.textContent = message;
+            row.appendChild(cell);
+            body.appendChild(row);
+        }
+
+        function createEmptyState(message) {
+            const emptyState = document.createElement("div");
+            emptyState.className = "empty-state";
+            emptyState.textContent = message;
+            return emptyState;
+        }
+
+        function renderDataNotice(data) {
+            let message = "";
+
+            if (data.coverage.sensor_buckets === 0) {
+                message = "No indoor sensor readings are available for this period. Try a longer period or confirm that the sensor is reporting data.";
+            } else if (data.coverage.aligned_buckets === 0) {
+                message = "Indoor readings are available, but none could be matched to nearby outdoor weather observations. Correlation charts require both data sources.";
+            } else if (data.relationships.length === 0) {
+                message = "Indoor and outdoor readings were matched, but there is not enough usable variation to calculate relationships for this period.";
+            }
+
+            dataNotice.textContent = message;
+            dataNotice.hidden = !message;
         }
 
         function setLoadingMessage(title, detail) {
@@ -518,6 +558,13 @@
             scatterCharts = [];
             scatterGrid.replaceChildren();
 
+            if (relationships.length === 0) {
+                scatterGrid.appendChild(createEmptyState(
+                    "No scatterplots are available because there are not enough matched, varying indoor and outdoor readings."
+                ));
+                return;
+            }
+
             relationships.slice(0, 4).forEach(function (relationship) {
                 const card = document.createElement("article");
                 card.className = "scatter-card";
@@ -558,6 +605,19 @@
                 card.append(headingRow, meta, canvasContainer, interpretation);
                 scatterGrid.appendChild(card);
 
+                if (!relationship.points || relationship.points.length === 0) {
+                    canvasContainer.replaceChildren(createEmptyState(
+                        "No chart points are available for this relationship."
+                    ));
+                    return;
+                }
+                if (typeof Chart === "undefined") {
+                    canvasContainer.replaceChildren(createEmptyState(
+                        "The chart library did not load. Refresh the page or check the web server's internet connection."
+                    ));
+                    return;
+                }
+
                 const datasets = [{
                     type: "scatter",
                     label: "Observations",
@@ -583,35 +643,51 @@
                     });
                 }
 
-                scatterCharts.push(new Chart(canvas, {
-                    type: "scatter",
-                    data: { datasets: datasets },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        parsing: false,
-                        interaction: { mode: "nearest", intersect: false },
-                        scales: {
-                            x: {
-                                title: {
-                                    display: true,
-                                    text: relationship.outdoor_label + " (" + relationship.outdoor_unit + ")"
-                                }
-                            },
-                            y: {
-                                title: {
-                                    display: true,
-                                    text: relationship.indoor_label + " (" + relationship.indoor_unit + ")"
+                try {
+                    scatterCharts.push(new Chart(canvas, {
+                        type: "scatter",
+                        data: { datasets: datasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            parsing: false,
+                            interaction: { mode: "nearest", intersect: false },
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: relationship.outdoor_label + " (" + relationship.outdoor_unit + ")"
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: relationship.indoor_label + " (" + relationship.indoor_unit + ")"
+                                    }
                                 }
                             }
                         }
-                    }
-                }));
+                    }));
+                } catch (error) {
+                    console.error("Unable to render insights scatterplot", error);
+                    canvasContainer.replaceChildren(createEmptyState(
+                        "This chart could not be rendered. The relationship data is still available in the table below."
+                    ));
+                }
             });
         }
 
         function renderRelationships(relationships) {
             relationshipBody.replaceChildren();
+
+            if (relationships.length === 0) {
+                appendEmptyRow(
+                    relationshipBody,
+                    7,
+                    "No relationships could be calculated from the available data."
+                );
+                return;
+            }
 
             relationships.forEach(function (relationship) {
                 const row = document.createElement("tr");
@@ -634,6 +710,15 @@
 
         function renderDailyPatterns(patterns) {
             dailyBody.replaceChildren();
+
+            if (patterns.length === 0) {
+                appendEmptyRow(
+                    dailyBody,
+                    5,
+                    "No daily pattern could be calculated from the available indoor readings."
+                );
+                return;
+            }
 
             patterns.forEach(function (pattern) {
                 const row = document.createElement("tr");
@@ -672,16 +757,24 @@
                 );
                 await nextFrame();
                 renderSummary(data);
-                renderScatterplots(data.relationships);
+                renderDataNotice(data);
                 renderRelationships(data.relationships);
                 renderDailyPatterns(data.daily_patterns);
                 renderWarnings(data.warnings);
                 results.hidden = false;
+                await nextFrame();
+                renderScatterplots(data.relationships);
+                status.classList.remove("error");
                 status.textContent = data.relationships.length
                     ? data.relationships.length + " indoor/outdoor relationships analyzed"
-                    : "Not enough aligned variation to calculate relationships.";
+                    : "Analysis completed, but no relationships could be calculated.";
             } catch (error) {
-                status.textContent = "Unable to load correlation insights.";
+                console.error("Unable to load correlation insights", error);
+                results.hidden = true;
+                status.classList.add("error");
+                status.textContent = error.message === "Insights request failed"
+                    ? "Unable to load insights from the web server. Try again in a moment."
+                    : "The insights page encountered an unexpected error while preparing the data.";
             } finally {
                 finishLoading();
             }
@@ -700,12 +793,12 @@
             document.documentElement.dataset.theme =
                 document.documentElement.dataset.theme === "dark" ? "light" : "dark";
             localStorage.setItem("theme", document.documentElement.dataset.theme);
-            applyChartTheme();
+            if (typeof Chart !== "undefined") applyChartTheme();
             updateThemeButton();
             scatterCharts.forEach(function (chart) { chart.update(); });
         });
 
-        applyChartTheme();
+        if (typeof Chart !== "undefined") applyChartTheme();
         updateThemeButton();
         loadInsights();
     </script>
