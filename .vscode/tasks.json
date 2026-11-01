@@ -1,0 +1,16 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "ClimateCube: Web server",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python",
+            "args": ["-m", "services.web_server"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "isBackground": true,
+            "problemMatcher": []
+        }
+    ]
+}

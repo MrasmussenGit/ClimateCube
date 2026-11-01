@@ -149,7 +149,7 @@
                     Strongest changing relationship
                     <span class="help">
                         <button class="help-button" type="button" aria-label="Explain strongest changing relationship" aria-describedby="help-changing">i</button>
-                        <span id="help-changing" class="help-text" role="tooltip">The indoor/outdoor pair whose short-term movements line up most closely. Positive values move in the same direction; negative values move in opposite directions. Values closer to -1 or +1 indicate a stronger relationship.</span>
+                        <span id="help-changing" class="help-text" role="tooltip">The indoor/outdoor pair whose short-term movements line up most closely. Positive values move in the same direction; negative values move in opposite directions. Absolute values below 0.20 are weak, 0.20–0.39 modest, 0.40–0.59 moderate, 0.60–0.79 strong, and 0.80 or higher very strong.</span>
                     </span>
                 </div>
                 <div id="relationship-value" class="summary-value">—</div>
@@ -404,6 +404,28 @@
             return value > 0 ? "positive" : "negative";
         }
 
+        function describeCorrelation(value) {
+            if (value === null || value === undefined) return "Unavailable";
+            const magnitude = Math.abs(value);
+            let strength;
+
+            if (magnitude >= 0.8) {
+                strength = "Very strong";
+            } else if (magnitude >= 0.6) {
+                strength = "Strong";
+            } else if (magnitude >= 0.4) {
+                strength = "Moderate";
+            } else if (magnitude >= 0.2) {
+                strength = "Modest";
+            } else {
+                strength = "Weak";
+            }
+
+            if (value === 0) return strength + " relationship";
+            return strength + (value > 0 ? " positive" : " negative") +
+                " relationship";
+        }
+
         function describeScatter(relationship) {
             const correlation = relationship.pearson;
 
@@ -588,7 +610,8 @@
                 " buckets aligned across " + data.coverage.duration_days + " days";
 
             document.getElementById("relationship-value").textContent = strongest
-                ? formatCorrelation(strongest.change_correlation) + " Δr"
+                ? formatCorrelation(strongest.change_correlation) + " Δr · " +
+                    describeCorrelation(strongest.change_correlation)
                 : "Not enough data";
             document.getElementById("relationship-detail").textContent = strongest
                 ? strongest.outdoor_label + " ↔ " + strongest.indoor_label

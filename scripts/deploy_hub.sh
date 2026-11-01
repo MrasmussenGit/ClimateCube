@@ -31,6 +31,12 @@ else
     echo "Weather collector is not installed; run ./scripts/setup.sh once to install it."
 fi
 
+if systemctl cat climatecube-backup.timer > /dev/null 2>&1; then
+    echo "Backup timer: $(systemctl is-active climatecube-backup.timer)"
+else
+    echo "Off-device backups are not configured; see README.md for SSH backup setup."
+fi
+
 echo
 echo "ClimateCube deployment complete."
 echo "Commit: $(git rev-parse --short HEAD)"
