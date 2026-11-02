@@ -187,7 +187,7 @@ $MPREMOTE "${CONNECT[@]}" cp "$CONFIG_FILE" :config.py
 echo
 echo "Verifying image..."
 $MPREMOTE "${CONNECT[@]}" exec \
-    "from umqtt.simple import MQTTClient; import config, controls, sensor_manager, display; print('Broker:', config.BROKER); print('Image verification passed')"
+    "from umqtt.simple import MQTTClient; import config, controls, sensor, sensor_manager, display; assert callable(sensor.get_error) and callable(sensor_manager.get_error), 'Sensor recovery API missing'; print('Broker:', config.BROKER); print('Sensor recovery API verified'); print('Image verification passed')"
 
 echo
 echo "Restarting Pico W..."

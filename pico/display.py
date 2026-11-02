@@ -11,13 +11,13 @@ PAGE_COUNT = 3
 def init():
     global oled
 
-    i2c = I2C(0, scl=Pin(5), sda=Pin(4))
-
-    if 0x3c not in i2c.scan():
-        oled = None
-        return False
-
     try:
+        i2c = I2C(0, scl=Pin(5), sda=Pin(4))
+
+        if 0x3c not in i2c.scan():
+            oled = None
+            return False
+
         oled = SSD1306_I2C(128, 64, i2c)
 
         oled.fill(0)
@@ -25,7 +25,8 @@ def init():
         oled.text("Starting...", 0, 15)
         oled.show()
         return True
-    except OSError:
+    except OSError as error:
+        print("OLED initialization failed: {}".format(error))
         oled = None
         return False
 
@@ -212,8 +213,8 @@ def show_publish_success():
 def show_sensor_not_detected():
     def draw():
         oled.text("ClimateCube", 0, 0)
-        oled.text("Sensor not", 0, 22)
-        oled.text("detected", 0, 38)
+        oled.text("Sensor read", 0, 22)
+        oled.text("unavailable", 0, 38)
 
     return _show(draw)
 

@@ -282,7 +282,12 @@ Connect the Pico W by USB and run:
 The imaging script verifies the board type, installs `umqtt.simple` and the
 BME680/BME688 sensor driver, copies all ClimateCube files including the
 MICS6814 driver without copying `__pycache__`, verifies the installation, and
-restarts the Pico. It securely prompts for Wi-Fi settings, hides the
+restarts the Pico. Every run copies the current `main.py`, `sensor.py`,
+`sensor_manager.py`, and `display.py`, including sensor recovery and diagnostic
+logging changes, and checks that the recovery API is available before restarting.
+Re-run this workflow for each existing Pico to install firmware changes; deploying
+the hub alone does not update the boards.
+It securely prompts for Wi-Fi settings, hides the
 password while it is entered, and removes its temporary configuration after
 imaging. The imaging computer finds the MQTT server at `climatecube.local` and
 writes its current IP address to the Pico, so customers do not need to know or
