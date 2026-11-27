@@ -83,6 +83,12 @@ echo "Configuring Mosquitto..."
 sudo tee /etc/mosquitto/conf.d/climatecube.conf > /dev/null <<EOF
 listener 1883
 allow_anonymous true
+log_dest stderr
+log_type error
+log_type warning
+log_type notice
+log_type information
+connection_messages true
 EOF
 
 sudo systemctl enable mosquitto
@@ -152,6 +158,10 @@ Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$PROJECT_DIR
 Environment=PYTHONUNBUFFERED=1
+Environment=CLIMATECUBE_LOG_DIR=$PROJECT_DIR/logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=climatecube-listener
 ExecStart=$PROJECT_DIR/.venv/bin/python services/mqtt_listener.py
 Restart=on-failure
 RestartSec=5

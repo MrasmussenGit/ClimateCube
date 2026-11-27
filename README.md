@@ -17,6 +17,49 @@ of the drive. Set `CLIMATECUBE_STORAGE_WARNING_PERCENT` in the web service
 environment to use a different percentage. At 5%, the indicator and alert turn
 red; configure that threshold with `CLIMATECUBE_STORAGE_CRITICAL_PERCENT`.
 
+## MQTT Diagnostics
+
+The hub runs two separate MQTT components: Mosquitto accepts connections from
+Picos, and `climatecube-listener` subscribes to readings and stores them in SQLite.
+An absent listener does not prevent a Pico from connecting to Mosquitto.
+The Pico currently waits for an MQTT connection before displaying readings, so
+an unreachable broker can leave the OLED showing its startup message.
+
+The listener logs timestamped startup, connection, subscription acknowledgement,
+disconnect, device registration, and stored-reading events. Database and
+unexpected failures include tracebacks; full MQTT payloads are not logged.
+Logs go to both the system journal (when run as a service) and
+`logs/mqtt_listener.log` in the hub checkout. The file rotates at 1 MiB with
+three backups (approximately 4 MiB total, plus a possible oversized entry).
+Set `CLIMATECUBE_LOG_DIR` to use another directory writable by the service user.
+Log-directory errors fail startup visibly rather than silently disabling logs.
+
+After updating an existing hub, run `./scripts/setup.sh` **on the hub**, not on
+a Pi used only to connect to a Pico. This installs/updates the service settings
+and enables Mosquitto connection/error logging to the journal. Setup also
+configures the hub hostname and restarts services. A normal deployment updates
+the listener code but does not change installed service or broker configuration.
+
+Useful hub checks, preferably before rebooting:
+
+```bash
+systemctl status mosquitto climatecube-listener --no-pager -l
+sudo ss -ltnp | grep ':1883'
+sudo journalctl -u mosquitto -u climatecube-listener --since today --no-pager
+tail -n 100 logs/mqtt_listener.log
+```
+
+The rotating listener files survive reboot. The journal's retention and whether
+it survives reboot depend on the operating system's journald configuration.
+If persistent journaling is enabled, use `sudo journalctl -b -1 -u mosquitto
+-u climatecube-listener --no-pager` to inspect the previous boot.
+
+## Rename a Sensor
+
+Click a sensor's name on its dashboard card to rename it in place. Save (or
+press Enter) to persist the name, or Cancel (or press Escape) to discard the edit.
+Names must contain 1 to 50 characters. Renaming is also available in Settings.
+
 ## Supported Hardware
 
 ClimateCube currently supports these devices on the Pico W I2C bus:

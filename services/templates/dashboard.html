@@ -27,6 +27,14 @@
         .sensor-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .sensor h2 { margin-top: 0; }
         .sensor-heading h2 { margin-bottom: 0; }
+        .sensor-name { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+        .sensor-name:hover { text-decoration: underline; }
+        .sensor-name:focus-visible { outline: 2px solid var(--info); outline-offset: 4px; }
+        .sensor-name-form { margin-top: 12px; }
+        .sensor-name-form[hidden] { display: none; }
+        .sensor-name-form input { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--text); font: inherit; }
+        .sensor-name-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .sensor-name-error { color: var(--critical-text); font-size: 14px; }
         .hidden-badge { padding: 4px 8px; border-radius: 999px; background: var(--border); color: var(--muted); font-size: 12px; font-weight: bold; }
         .temperature { margin: 20px 0; color: #d35400; font-size: 42px; font-weight: bold; }
         .primary-reading { position: relative; margin: 20px 0; }
@@ -178,9 +186,18 @@
             {% for reading in readings %}
                 <section class="sensor{% if not reading.active_flag %} hidden-sensor{% endif %}" data-sensor-id="{{ reading.sensor_id }}">
                     <div class="sensor-heading">
-                        <h2 class="sensor-name">{{ reading.sensor_name }}</h2>
+                        <h2><button class="sensor-name" type="button" title="Click to rename" aria-expanded="false" aria-controls="sensor-name-form-{{ reading.sensor_id }}">{{ reading.sensor_name }}</button></h2>
                         {% if not reading.active_flag %}<span class="hidden-badge">Inactive</span>{% endif %}
                     </div>
+                    <form id="sensor-name-form-{{ reading.sensor_id }}" class="sensor-name-form" method="post" action="{{ url_for('save_sensor_name', sensor_id=reading.sensor_id) }}" hidden>
+                        <label for="sensor-name-input-{{ reading.sensor_id }}">Sensor name</label>
+                        <input id="sensor-name-input-{{ reading.sensor_id }}" name="sensor_name" type="text" value="{{ reading.sensor_name }}" maxlength="50" required>
+                        <div class="sensor-name-actions">
+                            <button class="button" type="submit">Save</button>
+                            <button class="button sensor-name-cancel" type="button">Cancel</button>
+                        </div>
+                        <p class="sensor-name-error" role="alert" hidden></p>
+                    </form>
                     <div class="primary-reading">
                         <div class="temperature" data-temperature-c="{{ reading.temperature_c }}">
                             <span class="temperature-value">{{ "%.2f"|format(reading.temperature_c) }} °C</span>
@@ -278,6 +295,74 @@
         const latestApiUrl = "/api/latest{% if show_hidden %}?show_hidden=1{% endif %}";
         const pollIntervalMilliseconds = 10000;
         let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
+        let sensorNameRevision = 0;
+
+        document.querySelectorAll(".sensor[data-sensor-id]").forEach(function (card) {
+            const nameButton = card.querySelector(".sensor-name");
+            const form = card.querySelector(".sensor-name-form");
+            const input = form.elements.sensor_name;
+            const errorMessage = form.querySelector(".sensor-name-error");
+            let saving = false;
+
+            function closeEditor() {
+                form.hidden = true;
+                nameButton.setAttribute("aria-expanded", "false");
+                nameButton.focus();
+            }
+
+            nameButton.addEventListener("click", function () {
+                if (saving) return;
+                input.value = nameButton.textContent;
+                errorMessage.hidden = true;
+                form.hidden = false;
+                nameButton.setAttribute("aria-expanded", "true");
+                input.focus();
+                input.select();
+            });
+
+            form.querySelector(".sensor-name-cancel").addEventListener("click", closeEditor);
+            form.addEventListener("keydown", function (event) {
+                if (event.key === "Escape" && !saving) {
+                    event.preventDefault();
+                    closeEditor();
+                }
+            });
+            form.addEventListener("submit", async function (event) {
+                event.preventDefault();
+                if (saving) return;
+                saving = true;
+                errorMessage.hidden = true;
+                const formData = new FormData(form);
+                const controls = form.querySelectorAll("input, button");
+                controls.forEach(function (control) { control.disabled = true; });
+                try {
+                    const response = await fetch(form.action, {
+                        method: "POST",
+                        headers: { Accept: "application/json" },
+                        body: formData
+                    });
+                    if (!response.ok) {
+                        let message = "Unable to save the name. Please try again.";
+                        if (response.headers.get("content-type")?.includes("application/json")) {
+                            const result = await response.json();
+                            message = result.error || message;
+                        }
+                        throw new Error(message);
+                    }
+                    const result = await response.json();
+                    nameButton.textContent = result.sensor_name;
+                    sensorNameRevision += 1;
+                    closeEditor();
+                } catch (error) {
+                    errorMessage.textContent = error.message;
+                    errorMessage.hidden = false;
+                } finally {
+                    saving = false;
+                    controls.forEach(function (control) { control.disabled = false; });
+                    if (!form.hidden) input.focus();
+                }
+            });
+        });
 
         function createHelp(description) {
             const help = document.createElement("span");
@@ -442,14 +527,16 @@
             });
         }
 
-        function updateSensorCard(reading) {
+        function updateSensorCard(reading, updateNames) {
             const card = document.querySelector(
                 '.sensor[data-sensor-id="' + reading.sensor_id + '"]'
             );
 
             if (!card) return;
 
-            card.querySelector(".sensor-name").textContent = reading.sensor_name;
+            if (updateNames && card.querySelector(".sensor-name-form").hidden) {
+                card.querySelector(".sensor-name").textContent = reading.sensor_name;
+            }
             const measurementList = card.querySelector(".measurement-list");
             measurementList.replaceChildren();
             reading.secondary_measurements.forEach(function (measurement) {
@@ -523,6 +610,7 @@
         }
 
         async function refreshReadings() {
+            const nameRevision = sensorNameRevision;
             try {
                 const response = await fetch(latestApiUrl, { cache: "no-store" });
 
@@ -543,7 +631,9 @@
                     return;
                 }
 
-                readings.forEach(updateSensorCard);
+                readings.forEach(function (reading) {
+                    updateSensorCard(reading, nameRevision === sensorNameRevision);
+                });
                 displayTemperatures();
                 displayLocalTimes();
                 updateCommunicationStatuses();

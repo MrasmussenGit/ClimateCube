@@ -1,7 +1,11 @@
 import json
+import logging
 import math
+import os
 import re
 import sqlite3
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from paho.mqtt import client as mqtt
 
@@ -9,20 +13,66 @@ DB_FILE = "data/climatecube.db"
 MQTT_TOPIC = "climatecube/readings"
 MEASUREMENT_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 DISPLAY_FORMATS = {"number", "resistance", "temperature"}
+LOGGER = logging.getLogger("climatecube.mqtt_listener")
+LOG_MAX_BYTES = 1024 * 1024
+LOG_BACKUP_COUNT = 3
+
+
+def configure_logging():
+    log_dir = Path(os.environ.get(
+        "CLIMATECUBE_LOG_DIR",
+        str(Path(__file__).resolve().parent.parent / "logs")
+    ))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        log_dir / "mqtt_listener.log",
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8"
+    )
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    for handler in LOGGER.handlers[:]:
+        LOGGER.removeHandler(handler)
+        handler.close()
+    for handler in (logging.StreamHandler(), file_handler):
+        handler.setFormatter(formatter)
+        LOGGER.addHandler(handler)
+    LOGGER.setLevel(logging.INFO)
+    LOGGER.propagate = False
+    LOGGER.info("Diagnostic log: %s", file_handler.baseFilename)
 
 
 def on_connect(client, userdata, flags, reason_code):
     if reason_code != 0:
-        print(f"MQTT connection failed with code {reason_code}", flush=True)
+        LOGGER.error("MQTT connection rejected: code=%s", reason_code)
         return
 
-    client.subscribe(MQTT_TOPIC, qos=1)
-    print(f"Listening for ClimateCube messages on {MQTT_TOPIC}...", flush=True)
+    LOGGER.info("MQTT connected: session_present=%s", flags.get("session present"))
+    result, message_id = client.subscribe(MQTT_TOPIC, qos=1)
+    if result != mqtt.MQTT_ERR_SUCCESS:
+        LOGGER.error("MQTT subscribe request failed: topic=%s code=%s",
+                     MQTT_TOPIC, result)
+        return
+    LOGGER.info("MQTT subscription requested: topic=%s mid=%s",
+                MQTT_TOPIC, message_id)
+
+
+def on_subscribe(client, userdata, message_id, granted_qos):
+    if any(qos >= 128 for qos in granted_qos):
+        LOGGER.error("MQTT subscription rejected: mid=%s granted_qos=%s",
+                     message_id, granted_qos)
+        return
+    LOGGER.info("Listening for ClimateCube messages: topic=%s mid=%s qos=%s",
+                MQTT_TOPIC, message_id, granted_qos)
 
 
 def on_disconnect(client, userdata, reason_code):
     if reason_code != 0:
-        print("MQTT connection lost; reconnecting...", flush=True)
+        LOGGER.warning("MQTT connection lost: code=%s; reconnecting", reason_code)
+    else:
+        LOGGER.info("MQTT disconnected cleanly")
 
 
 def ensure_schema():
@@ -235,12 +285,10 @@ def store_measurements(conn, reading_id, measurements):
 
 
 def on_message(client, userdata, msg):
-
-    print("MESSAGE RECEIVED")
+    LOGGER.info("MQTT message received: topic=%s bytes=%s qos=%s",
+                msg.topic, len(msg.payload), msg.qos)
 
     payload = json.loads(msg.payload.decode())
-
-    print(f"Received: {payload}")
 
     ip_address = payload.get("ip_address")
     reading_interval_sec = payload.get("reading_interval_sec")
@@ -269,9 +317,7 @@ def on_message(client, userdata, msg):
 
     if row is None:
 
-        print(
-            f"Auto-registering device {payload['device_id']}"
-        )
+        LOGGER.info("Auto-registering device %s", payload["device_id"])
 
         display_name = (
             f"ClimateCube {payload['device_id'][-6:]}"
@@ -307,9 +353,8 @@ def on_message(client, userdata, msg):
 
         sensor_id = cursor.lastrowid
 
-        print(
-            f"Registered as sensor_id {sensor_id}"
-        )
+        LOGGER.info("Registered device %s as sensor_id=%s",
+                    payload["device_id"], sensor_id)
 
     else:
 
@@ -362,32 +407,46 @@ def on_message(client, userdata, msg):
     conn.commit()
     conn.close()
 
-    print("Reading stored")
+    LOGGER.info("Reading stored: device_id=%s sensor_id=%s",
+                payload["device_id"], sensor_id)
 
 
 def safe_on_message(client, userdata, msg):
     try:
         on_message(client, userdata, msg)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        print(f"Invalid MQTT message ignored: {error}")
-    except sqlite3.Error as error:
-        print(f"Database error while processing MQTT message: {error}")
-    except Exception as error:
+        LOGGER.warning("Invalid MQTT message ignored: topic=%s bytes=%s error=%s",
+                       msg.topic, len(msg.payload), error)
+    except sqlite3.Error:
+        LOGGER.exception("Database error while processing MQTT message: topic=%s",
+                         msg.topic)
+    except Exception:
         # An unexpected message must not terminate the MQTT network loop.
-        print(f"Unexpected MQTT message error: {error}")
+        LOGGER.exception("Unexpected MQTT message error: topic=%s", msg.topic)
 
 
 def main():
-    ensure_schema()
+    configure_logging()
+    try:
+        LOGGER.info("Starting MQTT listener: broker=localhost:1883 database=%s",
+                    Path(DB_FILE).resolve())
+        ensure_schema()
+        LOGGER.info("Database schema ready")
 
-    client = mqtt.Client()
+        client = mqtt.Client()
+        client.enable_logger(LOGGER.getChild("paho"))
+        client.on_connect = on_connect
+        client.on_disconnect = on_disconnect
+        client.on_subscribe = on_subscribe
+        client.on_message = safe_on_message
 
-    client.on_connect = on_connect
-    client.on_disconnect = on_disconnect
-    client.on_message = safe_on_message
-
-    client.connect("localhost", 1883)
-    client.loop_forever()
+        LOGGER.info("Connecting to MQTT broker localhost:1883")
+        client.connect("localhost", 1883)
+        client.loop_forever()
+        LOGGER.info("MQTT network loop stopped")
+    except Exception:
+        LOGGER.exception("MQTT listener failed")
+        raise
 
 
 if __name__ == "__main__":

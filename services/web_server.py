@@ -242,21 +242,26 @@ def save_weather_settings():
 @app.route("/settings/sensor/<int:sensor_id>/name", methods=["POST"])
 def save_sensor_name(sensor_id):
     sensor_name = request.form.get("sensor_name", "").strip()
+    wants_json = request.accept_mimetypes.best == "application/json"
+    error = None
 
     if not sensor_name:
-        return redirect(url_for(
-            "settings",
-            error="Sensor name cannot be empty."
-        ))
+        error = "Sensor name cannot be empty."
+    elif len(sensor_name) > 50:
+        error = "Sensor name must be 50 characters or fewer."
 
-    if len(sensor_name) > 50:
-        return redirect(url_for(
-            "settings",
-            error="Sensor name must be 50 characters or fewer."
-        ))
+    if error:
+        if wants_json:
+            return jsonify(error=error), 400
+        return redirect(url_for("settings", error=error))
 
     if not update_sensor_name(sensor_id, sensor_name):
+        if wants_json:
+            return jsonify(error="Sensor not found."), 404
         abort(404)
+
+    if wants_json:
+        return jsonify(sensor_id=sensor_id, sensor_name=sensor_name)
 
     return redirect(url_for("settings", saved="1"))
 
