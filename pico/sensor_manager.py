@@ -5,6 +5,10 @@ import sensor as environment_sensor
 OPTIONAL_DRIVERS = (gas_sensor,)
 
 
+def get_error():
+    return environment_sensor.get_error()
+
+
 def read():
     environmental = environment_sensor.GetTempData()
     if environmental is None:

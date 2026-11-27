@@ -176,9 +176,11 @@ while True:
     if sensor_reading is None:
         retry_delay = SENSOR_RETRY_DELAYS_SEC[sensor_retry_index]
 
-        if not sensor_missing:
-            log("Environmental sensor not detected")
-            sensor_missing = True
+        sensor_missing = True
+        log("Environmental sensor unavailable: {}. Retrying in {} seconds".format(
+            sensor_manager.get_error(),
+            retry_delay
+        ))
 
         # Refresh the warning on every retry. This also initializes an OLED
         # that is connected after startup.
@@ -193,7 +195,7 @@ while True:
     data = sensor_reading["environmental"]
 
     if sensor_missing:
-        log("Environmental sensor detected; resuming readings")
+        log("Environmental sensor recovered; resuming readings")
         sensor_missing = False
         sensor_retry_index = 0
 

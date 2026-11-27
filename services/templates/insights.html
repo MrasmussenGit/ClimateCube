@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ sensor.sensor_name }} Insights</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
+    <style>
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --positive: #18794e; --negative: #b42318; --warning: #8a6500; --warning-bg: #fff4e5; --error: #b42318; --error-bg: #fff0ee; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --positive: #70d6a0; --negative: #ff9b91; --warning: #ffd38a; --warning-bg: #3b2915; --error: #ff9b91; --error-bg: #3b1d1b; }
+        body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; }
+        .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+        .header-actions, .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+        .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        .button-link { padding: 10px 16px; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; text-decoration: none; }
+        .button-link:hover { background: var(--button); color: var(--page); }
+        h1 { margin-bottom: 6px; }
+        .details, .status, .method-note { color: var(--muted); }
+        button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; cursor: pointer; }
+        button:disabled { opacity: 0.55; cursor: wait; }
+        button.active, #theme-button { background: var(--button); color: var(--page); }
+        .field-label { display: inline-flex; align-items: center; gap: 6px; }
+        .help { position: relative; display: inline-flex; vertical-align: middle; }
+        .help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--muted); border-radius: 50%; background: transparent; color: var(--muted); font: bold 11px/1 Arial, sans-serif; cursor: help; }
+        .help-button:hover, .help-button:focus-visible { border-color: var(--text); color: var(--text); outline: 2px solid #6aa3cf; outline-offset: 2px; }
+        .help-text { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: 50%; box-sizing: border-box; width: min(340px, calc(100vw - 50px)); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--text); color: var(--page); box-shadow: 0 4px 14px var(--shadow); font-size: 13px; font-weight: normal; line-height: 1.45; text-align: left; text-transform: none; letter-spacing: normal; white-space: normal; visibility: hidden; opacity: 0; pointer-events: none; transform: translateX(-50%); }
+        .help-button:hover + .help-text, .help-button:focus + .help-text { visibility: visible; opacity: 1; }
+        .table-wrap .help-text { top: calc(100% + 8px); bottom: auto; }
+        th:first-child .help-text, th:nth-child(2) .help-text { left: 0; transform: none; }
+        th:last-child .help-text { right: 0; left: auto; transform: none; }
+        .controls { margin: 24px 0; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+        .summary-card, .panel, .scatter-card { background: var(--surface); border-radius: 12px; box-shadow: 0 4px 14px var(--shadow); }
+        .summary-card { padding: 18px; }
+        .summary-label { color: var(--muted); font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.04em; }
+        .summary-value { margin-top: 8px; font-size: 25px; font-weight: bold; }
+        .summary-detail { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+        .panel { margin-top: 20px; padding: 20px; }
+        .panel h2 { margin-top: 0; }
+        .scatter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+        .scatter-card { min-width: 0; padding: 16px; }
+        .scatter-heading { display: flex; align-items: center; gap: 7px; }
+        .scatter-card h3 { margin: 0; font-size: 17px; }
+        .scatter-meta { margin: 5px 0 12px; color: var(--muted); font-size: 13px; }
+        .scatter-interpretation { min-height: 58px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text); font-size: 13px; line-height: 1.45; }
+        .scatter-canvas { position: relative; width: 100%; min-width: 0; height: 260px; }
+        .scatter-canvas canvas, .sunlight-chart canvas { display: block; max-width: 100%; max-height: 100%; }
+        .learning-card { margin: 14px 0 18px; padding: 16px 18px; border-left: 4px solid #2471a3; border-radius: 8px; background: var(--page); }
+        .learning-card h3 { margin: 0 0 10px; font-size: 17px; }
+        .learning-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 22px; }
+        .learning-item { color: var(--muted); font-size: 13px; line-height: 1.45; }
+        .learning-item strong { color: var(--text); }
+        .sunlight-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 18px; align-items: stretch; }
+        .sunlight-chart { position: relative; width: 100%; min-width: 0; height: 340px; }
+        .sunlight-summary { display: grid; align-content: start; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--page); }
+        .sunlight-summary h3 { margin: 0; }
+        .sunlight-stat { font-size: 28px; font-weight: bold; }
+        .sunlight-detail { margin: 0; color: var(--muted); line-height: 1.5; }
+        .cloud-key { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+        .cloud-gradient { width: 110px; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #f4c542, #2471a3); }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 10px 9px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+        th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+        th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .positive { color: var(--positive); }
+        .negative { color: var(--negative); }
+        .warning-list { margin-bottom: 0; padding-left: 22px; color: var(--warning); }
+        .warning-list li { margin: 9px 0; line-height: 1.4; }
+        .method-note { line-height: 1.5; }
+        .loading-panel { display: flex; align-items: center; gap: 14px; max-width: 620px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 4px 14px var(--shadow); }
+        .loading-spinner { flex: 0 0 auto; width: 25px; height: 25px; border: 3px solid var(--border); border-top-color: #2471a3; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .loading-copy { display: grid; gap: 4px; }
+        .loading-title { font-weight: bold; }
+        .loading-detail { color: var(--muted); font-size: 13px; line-height: 1.35; }
+        .loading-elapsed { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+        .data-notice, .empty-state { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--muted); line-height: 1.45; }
+        .data-notice { margin: 0 0 18px; }
+        .data-notice strong, .empty-state strong { color: var(--text); }
+        .status.error { max-width: 620px; padding: 14px 16px; border: 1px solid var(--error); border-radius: 8px; background: var(--error-bg); color: var(--error); line-height: 1.45; }
+        .scatter-canvas .empty-state { box-sizing: border-box; display: grid; height: 100%; place-items: center; text-align: center; }
+        .empty-row td { padding: 20px 12px; color: var(--muted); text-align: center !important; white-space: normal; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            .loading-spinner { animation-duration: 1.8s; }
+        }
+        [hidden] { display: none !important; }
+        @media (max-width: 650px) {
+            body { padding: 18px; }
+            .header { flex-direction: column; }
+            .scatter-grid { grid-template-columns: 1fr; }
+            .scatter-card { padding: 12px; }
+            .scatter-canvas { height: 230px; }
+            .sunlight-layout { grid-template-columns: 1fr; }
+            .sunlight-chart { height: 280px; }
+        }
+    </style>
+</head>
+<body>
+    <a class="back-link" href="{{ url_for('history', sensor_id=sensor.sensor_id) }}">← {{ sensor.sensor_name }} history</a>
+    <div class="header">
+        <div>
+            <h1>{{ sensor.sensor_name }} insights</h1>
+            <p class="details">Explore outdoor influence, delayed response, and repeating daily patterns.</p>
+            <p id="timezone-details" class="details"></p>
+        </div>
+        <div class="header-actions">
+            <a class="button-link" href="{{ url_for('insights_comparison') }}">Compare rooms</a>
+            <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
+        </div>
+    </div>
+
+    <div class="controls" aria-label="Analysis period">
+        <button class="range-button" data-range="7d">7 days</button>
+        <button class="range-button active" data-range="30d">30 days</button>
+        <button class="range-button" data-range="90d">90 days</button>
+    </div>
+
+    <div id="loading-panel" class="loading-panel" role="status" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span class="loading-copy">
+            <span id="loading-title" class="loading-title">Loading historical readings...</span>
+            <span id="loading-detail" class="loading-detail">Collecting indoor sensor and outdoor weather data for the selected period.</span>
+            <span id="loading-elapsed" class="loading-elapsed">Elapsed: 0 seconds</span>
+        </span>
+    </div>
+    <p id="status" class="status" hidden></p>
+
+    <section id="results" hidden>
+        <div id="data-notice" class="data-notice" role="status" hidden></div>
+        <div class="summary-grid">
+            <article class="summary-card">
+                <div class="summary-label field-label">
+                    Outdoor data coverage
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain outdoor data coverage" aria-describedby="help-coverage">i</button>
+                        <span id="help-coverage" class="help-text" role="tooltip">The percentage of indoor 15-minute time blocks that could be matched to a nearby outdoor weather observation. Higher coverage makes comparisons more representative of the selected period.</span>
+                    </span>
+                </div>
+                <div id="coverage-value" class="summary-value">—</div>
+                <div id="coverage-detail" class="summary-detail"></div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-label field-label">
+                    Strongest changing relationship
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain strongest changing relationship" aria-describedby="help-changing">i</button>
+                        <span id="help-changing" class="help-text" role="tooltip">The indoor/outdoor pair whose short-term movements line up most closely. Positive values move in the same direction; negative values move in opposite directions. Absolute values below 0.20 are weak, 0.20–0.39 modest, 0.40–0.59 moderate, 0.60–0.79 strong, and 0.80 or higher very strong.</span>
+                    </span>
+                </div>
+                <div id="relationship-value" class="summary-value">—</div>
+                <div id="relationship-detail" class="summary-detail"></div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-label field-label">
+                    Estimated response delay
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain estimated response delay" aria-describedby="help-delay">i</button>
+                        <span id="help-delay" class="help-text" role="tooltip">The delay at which changes outdoors best line up with later changes indoors. For example, 2 hours suggests the room often responds about two hours after outdoor conditions change. It is an estimate, not proof of cause.</span>
+                    </span>
+                </div>
+                <div id="lag-value" class="summary-value">—</div>
+                <div id="lag-detail" class="summary-detail"></div>
+            </article>
+            <article class="summary-card">
+                <div class="summary-label field-label">
+                    Strongest daily pattern
+                    <span class="help">
+                        <button class="help-button" type="button" aria-label="Explain strongest daily pattern" aria-describedby="help-daily-summary">i</button>
+                        <span id="help-daily-summary" class="help-text" role="tooltip">The indoor measurement most consistently following a repeating 24-hour rhythm. The percentage is how much of that measurement's variation is described by a simple daily cycle.</span>
+                    </span>
+                </div>
+                <div id="daily-value" class="summary-value">—</div>
+                <div id="daily-detail" class="summary-detail"></div>
+            </article>
+        </div>
+
+        <section class="panel">
+            <h2 class="field-label">
+                Leading relationships
+                <span class="help">
+                    <button class="help-button" type="button" aria-label="Explain leading relationship scatterplots" aria-describedby="help-scatterplots">i</button>
+                    <span id="help-scatterplots" class="help-text" role="tooltip">Each chart compares two measurements observed at matching times. Dots near the orange best-fit line indicate a more consistent straight-line relationship; dots spread far from it indicate that the outdoor value alone does not explain indoor conditions well. Direction and closeness describe association, not cause.</span>
+                </span>
+            </h2>
+            <p class="method-note">Scatterplots show observed levels. The table also reports correlation between consecutive changes (Δr), which is less vulnerable to two unrelated series sharing a smooth daily trend.</p>
+            <aside class="learning-card">
+                <h3>How to read a scatterplot</h3>
+                <div class="learning-grid">
+                    <div class="learning-item"><strong>Each blue dot</strong> is one indoor reading paired with the closest outdoor reading from the same time.</div>
+                    <div class="learning-item"><strong>The orange line</strong> is the single straight line that best summarizes the overall cloud of dots. It is a guide, not a boundary or forecast.</div>
+                    <div class="learning-item"><strong>Dots packed close to the line</strong> mean one value changes predictably with the other. Dots scattered widely mean other influences are important.</div>
+                    <div class="learning-item"><strong>An upward line</strong> is a positive relationship: higher outdoor values tend to accompany higher indoor values. A downward line is negative.</div>
+                    <div class="learning-item"><strong>A nearly flat line</strong> suggests little straight-line relationship. Curves, clusters, or separate groups may still reveal patterns a straight line misses.</div>
+                    <div class="learning-item"><strong>Correlation is not causation.</strong> Time of day, HVAC, occupancy, sunlight, open windows, and weather can move both measurements together.</div>
+                </div>
+            </aside>
+            <div id="scatter-grid" class="scatter-grid"></div>
+        </section>
+
+        <section class="panel">
+            <h2>Sun and cloud effect on indoor temperature</h2>
+            <p class="method-note">This separate analysis compares indoor temperature with outdoor temperature and cloud cover at the same time. It uses observations between each date's sunrise and sunset so cloud cover is a useful proxy for sunshine. When daylight data is unavailable, it falls back to local observations from 8 AM through 6 PM.</p>
+            <div id="sunlight-content" class="sunlight-layout">
+                <div id="sunlight-chart" class="sunlight-chart"></div>
+                <aside class="sunlight-summary">
+                    <h3>Clear versus overcast</h3>
+                    <div id="sunlight-value" class="sunlight-stat">—</div>
+                    <p id="sunlight-detail" class="sunlight-detail"></p>
+                    <div class="cloud-key">
+                        <span>Clear</span>
+                        <span class="cloud-gradient" aria-hidden="true"></span>
+                        <span>Overcast</span>
+                    </div>
+                    <p id="sunlight-reliability" class="sunlight-detail"></p>
+                </aside>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>All indoor/outdoor relationships</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Indoor metric</th>
+                            <th>Outdoor metric</th>
+                            <th>
+                                <span class="field-label">
+                                    Pearson r
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain Pearson correlation" aria-describedby="help-pearson">i</button>
+                                        <span id="help-pearson" class="help-text" role="tooltip">Measures how closely two values follow a straight-line relationship. +1 means they rise together perfectly, -1 means one falls as the other rises, and 0 means no linear relationship.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Spearman ρ
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain Spearman correlation" aria-describedby="help-spearman">i</button>
+                                        <span id="help-spearman" class="help-text" role="tooltip">Compares the rank order of values rather than their exact size. It can find consistent increasing or decreasing relationships that are curved and is less sensitive to extreme values than Pearson correlation.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Change Δr
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain change correlation" aria-describedby="help-change-correlation">i</button>
+                                        <span id="help-change-correlation" class="help-text" role="tooltip">Correlation between one reading's change from the previous reading and the matching outdoor change. This asks whether the measurements move together, instead of merely being high or low at the same time of day.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Best outdoor lead
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain best outdoor lead" aria-describedby="help-outdoor-lead">i</button>
+                                        <span id="help-outdoor-lead" class="help-text" role="tooltip">The tested delay where an outdoor change aligns most strongly with a later indoor change. “No delay” means the strongest match occurred in the same time block.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Samples
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain correlation samples" aria-describedby="help-samples">i</button>
+                                        <span id="help-samples" class="help-text" role="tooltip">The number of aligned indoor/outdoor time blocks used for this relationship. More samples usually improve stability, but nearby readings are related to each other and are not fully independent evidence.</span>
+                                    </span>
+                                </span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="relationship-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Time-of-day effects</h2>
+            <p class="method-note">A 24-hour sine/cosine model estimates how much variation follows a repeating daily cycle. R² is descriptive, not proof that time itself causes the change.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Indoor metric</th>
+                            <th>
+                                <span class="field-label">
+                                    Daily-cycle R²
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain daily cycle R squared" aria-describedby="help-r-squared">i</button>
+                                        <span id="help-r-squared" class="help-text" role="tooltip">The share of observed variation described by a smooth repeating 24-hour pattern. A value of 0.70 means about 70% follows that daily rhythm; it does not identify what causes the rhythm.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Typical amplitude
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain typical amplitude" aria-describedby="help-amplitude">i</button>
+                                        <span id="help-amplitude" class="help-text" role="tooltip">The estimated distance from the daily average to the cycle's peak. The modeled peak-to-low swing is approximately twice this value.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Estimated peak time
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain estimated peak time" aria-describedby="help-peak-time">i</button>
+                                        <span id="help-peak-time" class="help-text" role="tooltip">The local time when the fitted daily cycle reaches its highest value. This summarizes the overall period and may not match every individual day.</span>
+                                    </span>
+                                </span>
+                            </th>
+                            <th>
+                                <span class="field-label">
+                                    Samples
+                                    <span class="help">
+                                        <button class="help-button" type="button" aria-label="Explain daily pattern samples" aria-describedby="help-daily-samples">i</button>
+                                        <span id="help-daily-samples" class="help-text" role="tooltip">The number of indoor observations used to estimate the daily pattern. Missing periods and limited day coverage can make the estimated peak and amplitude less reliable.</span>
+                                    </span>
+                                </span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="daily-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Reliability and interpretation</h2>
+            <ul id="warning-list" class="warning-list"></ul>
+        </section>
+    </section>
+
+    <script>
+        const sensorId = {{ sensor.sensor_id }};
+        const status = document.getElementById("status");
+        const results = document.getElementById("results");
+        const loadingPanel = document.getElementById("loading-panel");
+        const loadingTitle = document.getElementById("loading-title");
+        const loadingDetail = document.getElementById("loading-detail");
+        const loadingElapsed = document.getElementById("loading-elapsed");
+        const themeButton = document.getElementById("theme-button");
+        const rangeButtons = document.querySelectorAll(".range-button");
+        const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        const scatterGrid = document.getElementById("scatter-grid");
+        const relationshipBody = document.getElementById("relationship-body");
+        const dailyBody = document.getElementById("daily-body");
+        const warningList = document.getElementById("warning-list");
+        const dataNotice = document.getElementById("data-notice");
+        const sunlightChart = document.getElementById("sunlight-chart");
+        const sunlightValue = document.getElementById("sunlight-value");
+        const sunlightDetail = document.getElementById("sunlight-detail");
+        const sunlightReliability = document.getElementById("sunlight-reliability");
+        let currentRange = "30d";
+        let scatterCharts = [];
+        let loadingTimers = [];
+
+        document.getElementById("timezone-details").textContent =
+            "Daily patterns use " + timezoneName + " local time.";
+
+        function applyChartTheme() {
+            const styles = getComputedStyle(document.documentElement);
+            Chart.defaults.color = styles.getPropertyValue("--muted").trim();
+            Chart.defaults.borderColor = styles.getPropertyValue("--grid").trim();
+        }
+
+        function updateThemeButton() {
+            const dark = document.documentElement.dataset.theme === "dark";
+            themeButton.textContent = dark ? "Light mode" : "Dark mode";
+            themeButton.setAttribute("aria-pressed", String(dark));
+        }
+
+        function formatCorrelation(value) {
+            return value === null || value === undefined ? "—" : Number(value).toFixed(2);
+        }
+
+        function formatHour(hour) {
+            if (hour === null || hour === undefined) return "—";
+            const totalMinutes = Math.round(Number(hour) * 60);
+            const date = new Date(2000, 0, 1, Math.floor(totalMinutes / 60) % 24, totalMinutes % 60);
+            return new Intl.DateTimeFormat(undefined, {
+                hour: "numeric",
+                minute: "2-digit"
+            }).format(date);
+        }
+
+        function formatLag(minutes) {
+            if (minutes === null || minutes === undefined) return "—";
+            if (minutes === 0) return "No delay";
+            if (minutes < 60) return minutes + " min";
+            const hours = minutes / 60;
+            return Number.isInteger(hours) ? hours + " hr" : hours.toFixed(1) + " hr";
+        }
+
+        function correlationClass(value) {
+            if (value === null || value === undefined || value === 0) return "";
+            return value > 0 ? "positive" : "negative";
+        }
+
+        function describeCorrelation(value) {
+            if (value === null || value === undefined) return "Unavailable";
+            const magnitude = Math.abs(value);
+            let strength;
+
+            if (magnitude >= 0.8) {
+                strength = "Very strong";
+            } else if (magnitude >= 0.6) {
+                strength = "Strong";
+            } else if (magnitude >= 0.4) {
+                strength = "Moderate";
+            } else if (magnitude >= 0.2) {
+                strength = "Modest";
+            } else {
+                strength = "Weak";
+            }
+
+            if (value === 0) return strength + " relationship";
+            return strength + (value > 0 ? " positive" : " negative") +
+                " relationship";
+        }
+
+        function describeScatter(relationship) {
+            const correlation = relationship.pearson;
+
+            if (correlation === null || correlation === undefined) {
+                return "There is not enough variation to describe a straight-line relationship for this pair.";
+            }
+
+            const magnitude = Math.abs(correlation);
+            let clustering;
+            if (magnitude >= 0.8) {
+                clustering = "The dots should cluster very tightly around the line";
+            } else if (magnitude >= 0.6) {
+                clustering = "The dots should cluster fairly tightly around the line";
+            } else if (magnitude >= 0.4) {
+                clustering = "The dots show a moderate amount of scatter around the line";
+            } else if (magnitude >= 0.2) {
+                clustering = "The dots are loosely associated and substantially scattered";
+            } else {
+                clustering = "The dots are widely scattered and the line is a weak summary";
+            }
+
+            const direction = correlation > 0
+                ? " Higher outdoor values generally accompany higher indoor values."
+                : correlation < 0
+                    ? " Higher outdoor values generally accompany lower indoor values."
+                    : " The best-fit line is essentially flat.";
+            let comparison = "";
+
+            if (relationship.change_correlation !== null) {
+                const changeMagnitude = Math.abs(relationship.change_correlation);
+                if (magnitude - changeMagnitude >= 0.35) {
+                    comparison = " Short-term changes line up much less strongly than the levels, so a shared daily or seasonal trend may explain much of the apparent relationship.";
+                } else if (changeMagnitude >= 0.4) {
+                    comparison = " Short-term changes also move together, which supports—but does not prove—a direct connection.";
+                } else {
+                    comparison = " Short-term changes show limited agreement, so interpret the fitted line cautiously.";
+                }
+            }
+
+            return clustering + "." + direction + comparison +
+                " Other unmeasured factors may affect both variables.";
+        }
+
+        function appendCell(row, text, className) {
+            const cell = document.createElement("td");
+            cell.textContent = text;
+            if (className) cell.className = className;
+            row.appendChild(cell);
+        }
+
+        function appendEmptyRow(body, columnCount, message) {
+            const row = document.createElement("tr");
+            row.className = "empty-row";
+            const cell = document.createElement("td");
+            cell.colSpan = columnCount;
+            cell.textContent = message;
+            row.appendChild(cell);
+            body.appendChild(row);
+        }
+
+        function createEmptyState(message) {
+            const emptyState = document.createElement("div");
+            emptyState.className = "empty-state";
+            emptyState.textContent = message;
+            return emptyState;
+        }
+
+        function renderDataNotice(data) {
+            let message = "";
+
+            if (data.coverage.sensor_buckets === 0) {
+                message = "No indoor sensor readings are available for this period. Try a longer period or confirm that the sensor is reporting data.";
+            } else if (data.coverage.aligned_buckets === 0) {
+                message = "Indoor readings are available, but none could be matched to nearby outdoor weather observations. Correlation charts require both data sources.";
+            } else if (data.relationships.length === 0) {
+                message = "Indoor and outdoor readings were matched, but there is not enough usable variation to calculate relationships for this period.";
+            }
+
+            dataNotice.textContent = message;
+            dataNotice.hidden = !message;
+        }
+
+        function setLoadingMessage(title, detail) {
+            loadingTitle.textContent = title;
+            loadingDetail.textContent = detail;
+        }
+
+        function startLoading() {
+            const startedAt = Date.now();
+            const rangeLabel = currentRange === "7d"
+                ? "7 days"
+                : currentRange === "30d" ? "30 days" : "90 days";
+            loadingTimers.forEach(clearTimeout);
+            loadingTimers = [];
+            loadingPanel.hidden = false;
+            status.hidden = true;
+            results.hidden = true;
+            rangeButtons.forEach(function (button) { button.disabled = true; });
+            setLoadingMessage(
+                "Loading " + rangeLabel + " of historical readings...",
+                "Collecting indoor sensor and outdoor weather data for the selected period."
+            );
+            loadingElapsed.textContent = "Elapsed: 0 seconds";
+
+            loadingTimers.push(setTimeout(function () {
+                setLoadingMessage(
+                    "Aligning indoor and outdoor observations...",
+                    "Matching readings into comparable 15-minute time blocks."
+                );
+            }, 900));
+            loadingTimers.push(setTimeout(function () {
+                setLoadingMessage(
+                    "Calculating relationships and response delays...",
+                    "Comparing measurement pairs and testing when outdoor changes best match later indoor changes."
+                );
+            }, 2500));
+            loadingTimers.push(setTimeout(function () {
+                setLoadingMessage(
+                    "Checking daily patterns and reliability...",
+                    "Longer periods involve more observations and can take extra time on this device."
+                );
+            }, 6000));
+            loadingTimers.push(setInterval(function () {
+                const seconds = Math.floor((Date.now() - startedAt) / 1000);
+                loadingElapsed.textContent = "Elapsed: " + seconds +
+                    (seconds === 1 ? " second" : " seconds");
+            }, 1000));
+        }
+
+        function finishLoading() {
+            loadingTimers.forEach(function (timer) {
+                clearTimeout(timer);
+                clearInterval(timer);
+            });
+            loadingTimers = [];
+            loadingPanel.hidden = true;
+            status.hidden = false;
+            rangeButtons.forEach(function (button) { button.disabled = false; });
+        }
+
+        function nextFrame() {
+            return new Promise(function (resolve) {
+                requestAnimationFrame(resolve);
+            });
+        }
+
+        async function settleChartLayout() {
+            if (results.hidden || scatterCharts.length === 0) return;
+            if (document.fonts && document.fonts.ready) {
+                await document.fonts.ready;
+            }
+            await nextFrame();
+            await nextFrame();
+            scatterCharts.forEach(function (chart) {
+                const container = chart.canvas.parentElement;
+                const bounds = container.getBoundingClientRect();
+                if (bounds.width > 0 && bounds.height > 0) {
+                    chart.resize(
+                        Math.floor(bounds.width),
+                        Math.floor(bounds.height)
+                    );
+                }
+                chart.update("none");
+            });
+        }
+
+        function renderSummary(data) {
+            const strongest = data.relationships.find(function (relationship) {
+                return relationship.change_correlation !== null;
+            });
+            const strongestLag = data.relationships
+                .filter(function (relationship) { return relationship.lag; })
+                .sort(function (left, right) {
+                    return Math.abs(right.lag.correlation) - Math.abs(left.lag.correlation);
+                })[0];
+            const daily = data.daily_patterns[0];
+
+            document.getElementById("coverage-value").textContent =
+                data.coverage.aligned_percent.toFixed(1) + "%";
+            document.getElementById("coverage-detail").textContent =
+                data.coverage.aligned_buckets + " of " + data.coverage.sensor_buckets +
+                " buckets aligned across " + data.coverage.duration_days + " days";
+
+            document.getElementById("relationship-value").textContent = strongest
+                ? formatCorrelation(strongest.change_correlation) + " Δr · " +
+                    describeCorrelation(strongest.change_correlation)
+                : "Not enough data";
+            document.getElementById("relationship-detail").textContent = strongest
+                ? strongest.outdoor_label + " ↔ " + strongest.indoor_label
+                : "More aligned observations are needed.";
+
+            document.getElementById("lag-value").textContent = strongestLag
+                ? formatLag(strongestLag.lag.minutes)
+                : "Not available";
+            document.getElementById("lag-detail").textContent = strongestLag
+                ? strongestLag.outdoor_label + " leads " + strongestLag.indoor_label +
+                    " (change r=" + formatCorrelation(strongestLag.lag.correlation) + ")"
+                : "No lag met the minimum sample requirement.";
+
+            document.getElementById("daily-value").textContent = daily
+                ? Math.round(daily.r_squared * 100) + "% R²"
+                : "Not available";
+            document.getElementById("daily-detail").textContent = daily
+                ? daily.label + " peaks near " + formatHour(daily.peak_hour)
+                : "More observations are needed.";
+        }
+
+        function renderScatterplots(relationships) {
+            scatterCharts.forEach(function (chart) { chart.destroy(); });
+            scatterCharts = [];
+            scatterGrid.replaceChildren();
+
+            if (relationships.length === 0) {
+                scatterGrid.appendChild(createEmptyState(
+                    "No scatterplots are available because there are not enough matched, varying indoor and outdoor readings."
+                ));
+                return;
+            }
+
+            relationships.slice(0, 4).forEach(function (relationship) {
+                const card = document.createElement("article");
+                card.className = "scatter-card";
+                const headingRow = document.createElement("div");
+                headingRow.className = "scatter-heading";
+                const heading = document.createElement("h3");
+                heading.textContent = relationship.outdoor_label + " vs " + relationship.indoor_label;
+                const help = document.createElement("span");
+                help.className = "help";
+                const helpButton = document.createElement("button");
+                helpButton.className = "help-button";
+                helpButton.type = "button";
+                helpButton.textContent = "i";
+                helpButton.setAttribute("aria-label", "Explain " + relationship.outdoor_label + " versus " + relationship.indoor_label);
+                const helpText = document.createElement("span");
+                const helpId = "scatter-help-" + relationship.id.replace(/[^a-zA-Z0-9_-]/g, "-");
+                helpText.id = helpId;
+                helpText.className = "help-text";
+                helpText.setAttribute("role", "tooltip");
+                helpText.textContent = "Horizontal position is " + relationship.outdoor_label +
+                    "; vertical position is " + relationship.indoor_label +
+                    ". " + describeScatter(relationship);
+                helpButton.setAttribute("aria-describedby", helpId);
+                help.append(helpButton, helpText);
+                headingRow.append(heading, help);
+                const meta = document.createElement("p");
+                meta.className = "scatter-meta";
+                meta.textContent = "Pearson r " + formatCorrelation(relationship.pearson) +
+                    " · Spearman ρ " + formatCorrelation(relationship.spearman) +
+                    " · Change Δr " + formatCorrelation(relationship.change_correlation);
+                const canvasContainer = document.createElement("div");
+                canvasContainer.className = "scatter-canvas";
+                const canvas = document.createElement("canvas");
+                canvasContainer.appendChild(canvas);
+                const interpretation = document.createElement("p");
+                interpretation.className = "scatter-interpretation";
+                interpretation.textContent = describeScatter(relationship);
+                card.append(headingRow, meta, canvasContainer, interpretation);
+                scatterGrid.appendChild(card);
+
+                if (!relationship.points || relationship.points.length === 0) {
+                    canvasContainer.replaceChildren(createEmptyState(
+                        "No chart points are available for this relationship."
+                    ));
+                    return;
+                }
+                if (typeof Chart === "undefined") {
+                    canvasContainer.replaceChildren(createEmptyState(
+                        "The chart library did not load. Refresh the page or check the web server's internet connection."
+                    ));
+                    return;
+                }
+
+                const datasets = [{
+                    type: "scatter",
+                    label: "Observations",
+                    data: relationship.points,
+                    backgroundColor: "rgba(36, 113, 163, 0.55)",
+                    pointRadius: 3
+                }];
+
+                if (relationship.fit) {
+                    datasets.push({
+                        type: "line",
+                        label: "Linear fit",
+                        data: [{
+                            x: relationship.fit.x_min,
+                            y: relationship.fit.intercept + relationship.fit.slope * relationship.fit.x_min
+                        }, {
+                            x: relationship.fit.x_max,
+                            y: relationship.fit.intercept + relationship.fit.slope * relationship.fit.x_max
+                        }],
+                        borderColor: "#d35400",
+                        borderWidth: 2,
+                        pointRadius: 0
+                    });
+                }
+
+                try {
+                    scatterCharts.push(new Chart(canvas, {
+                        type: "scatter",
+                        data: { datasets: datasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            animation: false,
+                            parsing: false,
+                            interaction: { mode: "nearest", intersect: false },
+                            scales: {
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: relationship.outdoor_label + " (" + relationship.outdoor_unit + ")"
+                                    }
+                                },
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: relationship.indoor_label + " (" + relationship.indoor_unit + ")"
+                                    }
+                                }
+                            }
+                        }
+                    }));
+                } catch (error) {
+                    console.error("Unable to render insights scatterplot", error);
+                    canvasContainer.replaceChildren(createEmptyState(
+                        "This chart could not be rendered. The relationship data is still available in the table below."
+                    ));
+                }
+            });
+        }
+
+        function cloudColor(cloudCover, opacity) {
+            const fraction = Math.max(0, Math.min(100, cloudCover)) / 100;
+            const clear = [244, 197, 66];
+            const cloudy = [36, 113, 163];
+            const channel = function (index) {
+                return Math.round(
+                    clear[index] + (cloudy[index] - clear[index]) * fraction
+                );
+            };
+            return "rgba(" + channel(0) + "," + channel(1) + "," +
+                channel(2) + "," + opacity + ")";
+        }
+
+        function renderSunlightEffect(effect) {
+            sunlightChart.replaceChildren();
+
+            if (!effect) {
+                sunlightChart.appendChild(createEmptyState(
+                    "Not enough daytime observations contain indoor temperature, outdoor temperature, and cloud cover for this analysis."
+                ));
+                sunlightValue.textContent = "Not available";
+                sunlightDetail.textContent =
+                    "At least 12 varying observations between 8 AM and 6 PM are required.";
+                sunlightReliability.textContent =
+                    "The existing two-variable insights above are unaffected.";
+                return;
+            }
+
+            let daylightDescription;
+            if (effect.daylight_method === "sunrise_sunset") {
+                daylightDescription = "All samples use actual sunrise and sunset";
+            } else if (effect.daylight_method === "mixed") {
+                daylightDescription = effect.daylight_sample_count +
+                    " samples use actual daylight; " +
+                    effect.fallback_sample_count + " use the 8 AM–6 PM fallback";
+            } else {
+                daylightDescription = "Sunrise and sunset were unavailable; all samples use the 8 AM–6 PM fallback";
+            }
+            if (effect.earliest_sunrise_hour !== null) {
+                daylightDescription += ". Sunrise ranged from " +
+                    formatHour(effect.earliest_sunrise_hour) + " to " +
+                    formatHour(effect.latest_sunrise_hour) +
+                    "; sunset ranged from " +
+                    formatHour(effect.earliest_sunset_hour) + " to " +
+                    formatHour(effect.latest_sunset_hour);
+            }
+
+            const absoluteEffect = Math.abs(effect.cloud_effect_c);
+            if (absoluteEffect < 0.2) {
+                sunlightValue.textContent = "Little difference";
+                sunlightDetail.textContent =
+                    "At the same outdoor temperature, clear and overcast estimates differ by less than 0.2 °C.";
+            } else if (effect.cloud_effect_c < 0) {
+                sunlightValue.textContent = absoluteEffect.toFixed(1) + " °C warmer when clear";
+                sunlightDetail.textContent =
+                    "At the same outdoor temperature—for example " +
+                    effect.reference_outdoor_c.toFixed(1) +
+                    " °C—the model estimates a warmer room under clear skies than under complete cloud cover.";
+            } else {
+                sunlightValue.textContent = absoluteEffect.toFixed(1) + " °C warmer when overcast";
+                sunlightDetail.textContent =
+                    "At the same outdoor temperature—for example " +
+                    effect.reference_outdoor_c.toFixed(1) +
+                    " °C—the model estimates a warmer room under complete cloud cover than under clear skies.";
+            }
+            sunlightReliability.textContent =
+                effect.sample_count + " daytime samples · model R² " +
+                Math.round(effect.r_squared * 100) + "% · observed cloud cover " +
+                effect.cloud_min_pct.toFixed(0) + "–" +
+                effect.cloud_max_pct.toFixed(0) +
+                "%. " + daylightDescription +
+                ". This is an association; HVAC, window direction, season, and delayed heating may also contribute.";
+
+            if (typeof Chart === "undefined") {
+                sunlightChart.appendChild(createEmptyState(
+                    "The chart library did not load. Refresh the page or check the web server's internet connection."
+                ));
+                return;
+            }
+
+            const canvas = document.createElement("canvas");
+            sunlightChart.appendChild(canvas);
+            const estimate = function (outdoorTemperature, cloudFraction) {
+                return effect.intercept +
+                    effect.outdoor_coefficient * outdoorTemperature +
+                    effect.cloud_effect_c * cloudFraction;
+            };
+            const clearLine = [{
+                x: effect.outdoor_min_c,
+                y: estimate(effect.outdoor_min_c, 0)
+            }, {
+                x: effect.outdoor_max_c,
+                y: estimate(effect.outdoor_max_c, 0)
+            }];
+            const overcastLine = [{
+                x: effect.outdoor_min_c,
+                y: estimate(effect.outdoor_min_c, 1)
+            }, {
+                x: effect.outdoor_max_c,
+                y: estimate(effect.outdoor_max_c, 1)
+            }];
+
+            try {
+                scatterCharts.push(new Chart(canvas, {
+                    type: "scatter",
+                    data: {
+                        datasets: [{
+                            type: "scatter",
+                            label: "Daytime observations",
+                            data: effect.points,
+                            backgroundColor: effect.points.map(function (point) {
+                                return cloudColor(point.cloud, 0.7);
+                            }),
+                            pointRadius: 4
+                        }, {
+                            type: "line",
+                            label: "Estimated clear sky",
+                            data: clearLine,
+                            borderColor: "#f4c542",
+                            borderWidth: 3,
+                            pointRadius: 0
+                        }, {
+                            type: "line",
+                            label: "Estimated overcast",
+                            data: overcastLine,
+                            borderColor: "#2471a3",
+                            borderWidth: 3,
+                            pointRadius: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        parsing: false,
+                        interaction: { mode: "nearest", intersect: false },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function (context) {
+                                        const point = context.raw;
+                                        if (point.cloud === undefined) {
+                                            return context.dataset.label;
+                                        }
+                                        return "Indoor " + point.y.toFixed(1) + " °C · Outdoor " +
+                                            point.x.toFixed(1) + " °C · Cloud " +
+                                            point.cloud.toFixed(0) + "%";
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: "Outdoor temperature (°C)"
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: "Indoor temperature (°C)"
+                                }
+                            }
+                        }
+                    }
+                }));
+            } catch (error) {
+                console.error("Unable to render sunlight effect chart", error);
+                sunlightChart.replaceChildren(createEmptyState(
+                    "This chart could not be rendered. The estimated clear-versus-overcast difference is still shown beside it."
+                ));
+            }
+        }
+
+        function renderRelationships(relationships) {
+            relationshipBody.replaceChildren();
+
+            if (relationships.length === 0) {
+                appendEmptyRow(
+                    relationshipBody,
+                    7,
+                    "No relationships could be calculated from the available data."
+                );
+                return;
+            }
+
+            relationships.forEach(function (relationship) {
+                const row = document.createElement("tr");
+                appendCell(row, relationship.indoor_label);
+                appendCell(row, relationship.outdoor_label);
+                appendCell(row, formatCorrelation(relationship.pearson), correlationClass(relationship.pearson));
+                appendCell(row, formatCorrelation(relationship.spearman), correlationClass(relationship.spearman));
+                appendCell(row, formatCorrelation(relationship.change_correlation), correlationClass(relationship.change_correlation));
+                appendCell(
+                    row,
+                    relationship.lag
+                        ? formatLag(relationship.lag.minutes) + " (r=" +
+                            formatCorrelation(relationship.lag.correlation) + ")"
+                        : "—"
+                );
+                appendCell(row, String(relationship.sample_count));
+                relationshipBody.appendChild(row);
+            });
+        }
+
+        function renderDailyPatterns(patterns) {
+            dailyBody.replaceChildren();
+
+            if (patterns.length === 0) {
+                appendEmptyRow(
+                    dailyBody,
+                    5,
+                    "No daily pattern could be calculated from the available indoor readings."
+                );
+                return;
+            }
+
+            patterns.forEach(function (pattern) {
+                const row = document.createElement("tr");
+                appendCell(row, pattern.label);
+                appendCell(row, formatCorrelation(pattern.r_squared));
+                appendCell(row, pattern.amplitude + " " + pattern.unit);
+                appendCell(row, formatHour(pattern.peak_hour));
+                appendCell(row, String(pattern.sample_count));
+                dailyBody.appendChild(row);
+            });
+        }
+
+        function renderWarnings(warnings) {
+            warningList.replaceChildren();
+            warnings.forEach(function (warning) {
+                const item = document.createElement("li");
+                item.textContent = warning;
+                warningList.appendChild(item);
+            });
+        }
+
+        async function loadInsights() {
+            startLoading();
+
+            try {
+                const response = await fetch(
+                    "{{ url_for('insights_api', sensor_id=sensor.sensor_id) }}" +
+                    "?range=" + currentRange +
+                    "&timezone=" + encodeURIComponent(timezoneName)
+                );
+                if (!response.ok) throw new Error("Insights request failed");
+                const data = await response.json();
+                setLoadingMessage(
+                    "Preparing charts and summaries...",
+                    "Turning the completed calculations into the dashboard below."
+                );
+                await nextFrame();
+                renderSummary(data);
+                renderDataNotice(data);
+                renderRelationships(data.relationships);
+                renderDailyPatterns(data.daily_patterns);
+                renderWarnings(data.warnings);
+                results.hidden = false;
+                await nextFrame();
+                renderScatterplots(data.relationships);
+                renderSunlightEffect(data.sunlight_effect);
+                status.classList.remove("error");
+                status.textContent = data.relationships.length
+                    ? data.relationships.length + " indoor/outdoor relationships analyzed"
+                    : "Analysis completed, but no relationships could be calculated.";
+            } catch (error) {
+                console.error("Unable to load correlation insights", error);
+                results.hidden = true;
+                status.classList.add("error");
+                status.textContent = error.message === "Insights request failed"
+                    ? "Unable to load insights from the web server. Try again in a moment."
+                    : "The insights page encountered an unexpected error while preparing the data.";
+            } finally {
+                finishLoading();
+                await settleChartLayout();
+            }
+        }
+
+        rangeButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                rangeButtons.forEach(function (item) { item.classList.remove("active"); });
+                button.classList.add("active");
+                currentRange = button.dataset.range;
+                loadInsights();
+            });
+        });
+
+        themeButton.addEventListener("click", function () {
+            document.documentElement.dataset.theme =
+                document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+            localStorage.setItem("theme", document.documentElement.dataset.theme);
+            if (typeof Chart !== "undefined") applyChartTheme();
+            updateThemeButton();
+            scatterCharts.forEach(function (chart) { chart.update(); });
+        });
+
+        if (typeof Chart !== "undefined") applyChartTheme();
+        updateThemeButton();
+        loadInsights();
+    </script>
+</body>
+</html>

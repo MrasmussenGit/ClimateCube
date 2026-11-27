@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Compare Room Insights</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.documentElement.dataset.theme = localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    </script>
+    <style>
+        :root { color-scheme: light; --page: #eef2f6; --surface: #ffffff; --text: #243447; --muted: #667788; --border: #d8e0e8; --button: #243447; --grid: rgba(102, 119, 136, 0.2); --shadow: rgba(0, 0, 0, 0.08); --selected: #edf5fc; --selected-border: #6aa3cf; --positive: #18794e; --negative: #b42318; --error: #b42318; --error-bg: #fff0ee; }
+        :root[data-theme="dark"] { color-scheme: dark; --page: #101820; --surface: #1b2733; --text: #edf3f8; --muted: #a9b7c5; --border: #344454; --button: #d9e4ee; --grid: rgba(169, 183, 197, 0.2); --shadow: rgba(0, 0, 0, 0.3); --selected: #20384b; --selected-border: #6aa3cf; --positive: #70d6a0; --negative: #ff9b91; --error: #ff9b91; --error-bg: #3b1d1b; }
+        body { margin: 0; padding: 30px; background: var(--page); color: var(--text); font-family: Arial, sans-serif; }
+        .header, .selector-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+        .header-actions, .controls, .selector-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .back-link { color: var(--text); font-weight: bold; text-decoration: none; }
+        h1 { margin-bottom: 6px; }
+        .details, .status, .chart-meta, .selection-summary { color: var(--muted); }
+        button { padding: 10px 16px; border: 0; border-radius: 8px; background: var(--border); color: var(--text); font-size: 15px; cursor: pointer; }
+        button:disabled { opacity: 0.55; cursor: wait; }
+        button.active, #theme-button, #unit-button, #update-button { background: var(--button); color: var(--page); }
+        .controls { margin: 24px 0 18px; }
+        .selector-panel, .panel { padding: 18px; border-radius: 12px; background: var(--surface); box-shadow: 0 4px 14px var(--shadow); }
+        .selector-heading h2, .panel h2 { margin-top: 0; }
+        .selection-summary { margin: 5px 0 0; }
+        .sensor-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 16px; }
+        .sensor-control { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--page); font-weight: bold; cursor: pointer; }
+        .sensor-control:has(input:checked) { border-color: var(--selected-border); background: var(--selected); }
+        .sensor-control input { width: 18px; height: 18px; margin: 0; accent-color: var(--button); }
+        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(390px, 1fr)); gap: 18px; margin-top: 20px; }
+        .chart-card { min-width: 0; padding: 18px; border-radius: 12px; background: var(--surface); box-shadow: 0 4px 14px var(--shadow); }
+        .chart-card h3 { margin: 0; }
+        .chart-meta { margin: 6px 0 12px; font-size: 13px; }
+        .chart-canvas { height: 280px; }
+        .empty-state { box-sizing: border-box; display: grid; min-height: 130px; padding: 18px; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--page); color: var(--muted); line-height: 1.45; text-align: center; }
+        .chart-canvas .empty-state { height: 100%; }
+        .panel { margin-top: 20px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 10px 9px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+        th:first-child, td:first-child { text-align: left; }
+        th { color: var(--muted); font-size: 12px; letter-spacing: 0.03em; text-transform: uppercase; }
+        .positive { color: var(--positive); }
+        .negative { color: var(--negative); }
+        .status.error { max-width: 680px; padding: 14px 16px; border: 1px solid var(--error); border-radius: 8px; background: var(--error-bg); color: var(--error); }
+        [hidden] { display: none !important; }
+        @media (max-width: 650px) {
+            body { padding: 18px; }
+            .header, .selector-heading { flex-direction: column; }
+            .sensor-controls, .chart-grid { grid-template-columns: 1fr; }
+            .chart-card { padding: 12px; }
+            .chart-canvas { height: 240px; }
+        }
+    </style>
+</head>
+<body>
+    <a class="back-link" href="{{ url_for('dashboard') }}">&larr; Current readings</a>
+    <div class="header">
+        <div>
+            <h1>Compare room insights</h1>
+            <p class="details">Compare how each room's temperature relates to outdoor temperature. Each room is calculated separately.</p>
+        </div>
+        <div class="header-actions">
+            <button id="theme-button" type="button" aria-pressed="false">Dark mode</button>
+            <button id="unit-button" type="button">Show &deg;F</button>
+        </div>
+    </div>
+
+    <div class="controls" aria-label="Analysis period">
+        <button class="range-button" data-range="7d">7 days</button>
+        <button class="range-button active" data-range="30d">30 days</button>
+        <button class="range-button" data-range="90d">90 days</button>
+    </div>
+
+    <section class="selector-panel" aria-labelledby="room-selector-heading">
+        <div class="selector-heading">
+            <div>
+                <h2 id="room-selector-heading">Rooms to compare</h2>
+                <p id="selection-summary" class="selection-summary"></p>
+            </div>
+            <div class="selector-actions">
+                <button id="select-all-button" type="button">Select all</button>
+                <button id="clear-all-button" type="button">Clear all</button>
+                <button id="update-button" type="button">Update comparison</button>
+            </div>
+        </div>
+        <div id="sensor-controls" class="sensor-controls" role="group" aria-label="Choose rooms to compare">
+            {% for sensor in sensors %}
+                <label class="sensor-control">
+                    <input type="checkbox" value="{{ sensor.sensor_id }}" checked>
+                    <span>{{ sensor.sensor_name }}</span>
+                </label>
+            {% endfor %}
+        </div>
+        {% if not sensors %}
+            <div class="empty-state">No active room sensors are available to compare.</div>
+        {% endif %}
+    </section>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="chart-grid" class="chart-grid"></div>
+
+    <section id="summary-panel" class="panel" hidden>
+        <h2>Room comparison summary</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Room</th>
+                        <th>Pearson r</th>
+                        <th>Variation described (r&sup2;)</th>
+                        <th>Direction</th>
+                        <th>Best outdoor lead</th>
+                        <th>Samples</th>
+                        <th>Outdoor coverage</th>
+                    </tr>
+                </thead>
+                <tbody id="summary-body"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <script>
+        const palette = ["#2471a3", "#239b56", "#8e44ad", "#c0392b", "#117864", "#b7950b"];
+        const status = document.getElementById("status");
+        const chartGrid = document.getElementById("chart-grid");
+        const summaryPanel = document.getElementById("summary-panel");
+        const summaryBody = document.getElementById("summary-body");
+        const sensorInputs = Array.from(document.querySelectorAll("#sensor-controls input"));
+        const selectionSummary = document.getElementById("selection-summary");
+        const selectAllButton = document.getElementById("select-all-button");
+        const clearAllButton = document.getElementById("clear-all-button");
+        const updateButton = document.getElementById("update-button");
+        const themeButton = document.getElementById("theme-button");
+        const unitButton = document.getElementById("unit-button");
+        const rangeButtons = document.querySelectorAll(".range-button");
+        const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        let currentRange = "30d";
+        let temperatureUnit = localStorage.getItem("temperatureUnit") || "C";
+        let comparisonData = null;
+        let charts = [];
+
+        function selectedSensorIds() {
+            return sensorInputs
+                .filter(function (input) { return input.checked; })
+                .map(function (input) { return input.value; });
+        }
+
+        function updateSelectionSummary() {
+            const selected = selectedSensorIds().length;
+            selectionSummary.textContent = sensorInputs.length === 0
+                ? "No active rooms available"
+                : selected + " of " + sensorInputs.length + " rooms selected";
+            selectAllButton.disabled = selected === sensorInputs.length;
+            clearAllButton.disabled = selected === 0;
+            updateButton.disabled = selected === 0;
+        }
+
+        function applyChartTheme() {
+            if (typeof Chart === "undefined") return;
+            const styles = getComputedStyle(document.documentElement);
+            Chart.defaults.color = styles.getPropertyValue("--muted").trim();
+            Chart.defaults.borderColor = styles.getPropertyValue("--grid").trim();
+        }
+
+        function updateThemeButton() {
+            const dark = document.documentElement.dataset.theme === "dark";
+            themeButton.textContent = dark ? "Light mode" : "Dark mode";
+            themeButton.setAttribute("aria-pressed", String(dark));
+        }
+
+        function convertTemperature(value) {
+            if (value === null || value === undefined) return null;
+            return temperatureUnit === "F"
+                ? (Number(value) * 9 / 5) + 32
+                : Number(value);
+        }
+
+        function formatCorrelation(value) {
+            return value === null || value === undefined
+                ? "-"
+                : Number(value).toFixed(2);
+        }
+
+        function formatLag(lag) {
+            if (!lag) return "-";
+            if (lag.minutes === 0) return "No delay";
+            if (lag.minutes < 60) return lag.minutes + " min";
+            const hours = lag.minutes / 60;
+            return Number.isInteger(hours) ? hours + " hr" : hours.toFixed(1) + " hr";
+        }
+
+        function appendCell(row, text, className) {
+            const cell = document.createElement("td");
+            cell.textContent = text;
+            if (className) cell.className = className;
+            row.appendChild(cell);
+        }
+
+        function correlationClass(value) {
+            if (value === null || value === undefined || value === 0) return "";
+            return value > 0 ? "positive" : "negative";
+        }
+
+        function paddedBounds(values) {
+            const minimum = Math.min.apply(null, values);
+            const maximum = Math.max.apply(null, values);
+            const padding = minimum === maximum
+                ? 1
+                : (maximum - minimum) * 0.06;
+            return {
+                min: minimum - padding,
+                max: maximum + padding
+            };
+        }
+
+        function emptyState(message) {
+            const element = document.createElement("div");
+            element.className = "empty-state";
+            element.textContent = message;
+            return element;
+        }
+
+        function roomEmptyMessage(room) {
+            if (room.coverage.sensor_buckets === 0) {
+                return "No indoor temperature readings are available for this room and period.";
+            }
+            if (room.coverage.aligned_buckets === 0) {
+                return "Indoor readings are available, but no nearby outdoor temperatures could be matched.";
+            }
+            return "The matched readings do not have enough variation to calculate a relationship.";
+        }
+
+        function renderComparison() {
+            charts.forEach(function (chart) { chart.destroy(); });
+            charts = [];
+            chartGrid.replaceChildren();
+            summaryBody.replaceChildren();
+
+            if (!comparisonData || comparisonData.rooms.length === 0) {
+                chartGrid.appendChild(emptyState("Select at least one active room to compare."));
+                summaryPanel.hidden = true;
+                return;
+            }
+
+            const relationships = comparisonData.rooms
+                .map(function (room) { return room.relationship; })
+                .filter(function (relationship) {
+                    return relationship && relationship.points.length;
+                });
+            const xValues = relationships.flatMap(function (relationship) {
+                return relationship.points.map(function (point) {
+                    return convertTemperature(point.x);
+                });
+            });
+            const yValues = relationships.flatMap(function (relationship) {
+                return relationship.points.map(function (point) {
+                    return convertTemperature(point.y);
+                });
+            });
+            const xBounds = xValues.length ? paddedBounds(xValues) : null;
+            const yBounds = yValues.length ? paddedBounds(yValues) : null;
+
+            comparisonData.rooms.forEach(function (room, index) {
+                const relationship = room.relationship;
+                const card = document.createElement("article");
+                card.className = "chart-card";
+                const heading = document.createElement("h3");
+                heading.textContent = room.sensor.sensor_name;
+                const meta = document.createElement("p");
+                meta.className = "chart-meta";
+                const canvasContainer = document.createElement("div");
+                canvasContainer.className = "chart-canvas";
+                card.append(heading, meta, canvasContainer);
+                chartGrid.appendChild(card);
+
+                const row = document.createElement("tr");
+                appendCell(row, room.sensor.sensor_name);
+                appendCell(
+                    row,
+                    relationship ? formatCorrelation(relationship.pearson) : "-",
+                    relationship ? correlationClass(relationship.pearson) : ""
+                );
+                appendCell(
+                    row,
+                    relationship && relationship.pearson !== null
+                        ? Math.round(relationship.pearson * relationship.pearson * 100) + "%"
+                        : "-"
+                );
+                appendCell(
+                    row,
+                    relationship && relationship.direction !== "none"
+                        ? relationship.direction
+                        : "-"
+                );
+                appendCell(row, relationship ? formatLag(relationship.lag) : "-");
+                appendCell(row, relationship ? String(relationship.sample_count) : "-");
+                appendCell(row, room.coverage.aligned_percent.toFixed(1) + "%");
+                summaryBody.appendChild(row);
+
+                if (!relationship || !relationship.points.length) {
+                    meta.textContent = room.coverage.aligned_buckets + " matched observations";
+                    canvasContainer.appendChild(emptyState(roomEmptyMessage(room)));
+                    return;
+                }
+
+                meta.textContent = "Pearson r " + formatCorrelation(relationship.pearson) +
+                    " | r\u00B2 " + (
+                        relationship.pearson === null
+                            ? "-"
+                            : Math.round(relationship.pearson * relationship.pearson * 100) + "%"
+                    ) + " | " + relationship.sample_count + " samples";
+
+                if (typeof Chart === "undefined") {
+                    canvasContainer.appendChild(emptyState(
+                        "The chart library did not load. Refresh the page or check the web server's internet connection."
+                    ));
+                    return;
+                }
+
+                const canvas = document.createElement("canvas");
+                canvasContainer.appendChild(canvas);
+                const datasets = [{
+                    type: "scatter",
+                    label: room.sensor.sensor_name,
+                    data: relationship.points.map(function (point) {
+                        return {
+                            x: convertTemperature(point.x),
+                            y: convertTemperature(point.y)
+                        };
+                    }),
+                    backgroundColor: palette[index % palette.length] + "99",
+                    pointRadius: 3
+                }];
+
+                if (relationship.fit) {
+                    const firstX = relationship.fit.x_min;
+                    const lastX = relationship.fit.x_max;
+                    datasets.push({
+                        type: "line",
+                        label: "Linear fit",
+                        data: [{
+                            x: convertTemperature(firstX),
+                            y: convertTemperature(
+                                relationship.fit.intercept + relationship.fit.slope * firstX
+                            )
+                        }, {
+                            x: convertTemperature(lastX),
+                            y: convertTemperature(
+                                relationship.fit.intercept + relationship.fit.slope * lastX
+                            )
+                        }],
+                        borderColor: "#d35400",
+                        borderWidth: 2,
+                        pointRadius: 0
+                    });
+                }
+
+                try {
+                    charts.push(new Chart(canvas, {
+                        type: "scatter",
+                        data: { datasets: datasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            parsing: false,
+                            plugins: { legend: { display: false } },
+                            interaction: { mode: "nearest", intersect: false },
+                            scales: {
+                                x: {
+                                    min: xBounds.min,
+                                    max: xBounds.max,
+                                    title: {
+                                        display: true,
+                                        text: "Outdoor temperature (\u00B0" + temperatureUnit + ")"
+                                    }
+                                },
+                                y: {
+                                    min: yBounds.min,
+                                    max: yBounds.max,
+                                    title: {
+                                        display: true,
+                                        text: "Indoor temperature (\u00B0" + temperatureUnit + ")"
+                                    }
+                                }
+                            }
+                        }
+                    }));
+                } catch (error) {
+                    console.error("Unable to render room comparison chart", error);
+                    canvasContainer.replaceChildren(emptyState(
+                        "This chart could not be rendered. Its statistics remain available below."
+                    ));
+                }
+            });
+
+            summaryPanel.hidden = false;
+        }
+
+        async function loadComparison() {
+            const sensorIds = selectedSensorIds();
+            if (sensorIds.length === 0) {
+                comparisonData = null;
+                renderComparison();
+                status.classList.remove("error");
+                status.textContent = "Select one or more rooms, then update the comparison.";
+                return;
+            }
+
+            const parameters = new URLSearchParams({
+                range: currentRange,
+                timezone: timezoneName
+            });
+            sensorIds.forEach(function (sensorId) {
+                parameters.append("sensor_id", sensorId);
+            });
+            status.classList.remove("error");
+            status.textContent = "Calculating separate temperature relationships for " +
+                sensorIds.length + (sensorIds.length === 1 ? " room..." : " rooms...");
+            updateButton.disabled = true;
+
+            try {
+                const response = await fetch(
+                    "{{ url_for('insights_comparison_api') }}?" + parameters.toString()
+                );
+                if (!response.ok) throw new Error("Comparison request failed");
+                comparisonData = await response.json();
+                renderComparison();
+                const available = comparisonData.rooms.filter(function (room) {
+                    return room.relationship;
+                }).length;
+                const roomCount = comparisonData.rooms.length;
+                status.textContent = available + " of " + roomCount + " selected " +
+                    (roomCount === 1 ? "room has" : "rooms have") +
+                    " enough matched data for comparison.";
+            } catch (error) {
+                console.error("Unable to load room insights comparison", error);
+                comparisonData = null;
+                renderComparison();
+                status.classList.add("error");
+                status.textContent = "Unable to load the room comparison from the web server. Try again in a moment.";
+            } finally {
+                updateSelectionSummary();
+            }
+        }
+
+        sensorInputs.forEach(function (input) {
+            input.addEventListener("change", updateSelectionSummary);
+        });
+        selectAllButton.addEventListener("click", function () {
+            sensorInputs.forEach(function (input) { input.checked = true; });
+            updateSelectionSummary();
+        });
+        clearAllButton.addEventListener("click", function () {
+            sensorInputs.forEach(function (input) { input.checked = false; });
+            updateSelectionSummary();
+        });
+        updateButton.addEventListener("click", loadComparison);
+        rangeButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                rangeButtons.forEach(function (item) { item.classList.remove("active"); });
+                button.classList.add("active");
+                currentRange = button.dataset.range;
+                loadComparison();
+            });
+        });
+        themeButton.addEventListener("click", function () {
+            document.documentElement.dataset.theme =
+                document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+            localStorage.setItem("theme", document.documentElement.dataset.theme);
+            applyChartTheme();
+            updateThemeButton();
+            charts.forEach(function (chart) { chart.update(); });
+        });
+        unitButton.addEventListener("click", function () {
+            temperatureUnit = temperatureUnit === "C" ? "F" : "C";
+            localStorage.setItem("temperatureUnit", temperatureUnit);
+            unitButton.textContent = temperatureUnit === "F" ? "Show \u00B0C" : "Show \u00B0F";
+            renderComparison();
+        });
+
+        applyChartTheme();
+        updateThemeButton();
+        unitButton.textContent = temperatureUnit === "F" ? "Show \u00B0C" : "Show \u00B0F";
+        updateSelectionSummary();
+        if (sensorInputs.length) loadComparison();
+    </script>
+</body>
+</html>

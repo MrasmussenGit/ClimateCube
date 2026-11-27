@@ -1,6 +1,7 @@
 import json
 import sqlite3
-from datetime import datetime
+from bisect import bisect_left
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -14,11 +15,67 @@ HISTORY_RANGES = {
     "7d": ("-7 days", 1800)
 }
 
+INSIGHT_RANGES = {
+    "7d": "-7 days",
+    "30d": "-30 days",
+    "90d": "-90 days"
+}
+
+INSIGHT_BUCKET_SECONDS = 900
+
 
 def get_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def match_daylight(daylight_by_day, reading_time, weather):
+    candidate_days = (
+        reading_time.date(),
+        reading_time.date() - timedelta(days=1)
+    )
+    candidates = [
+        candidate
+        for day in candidate_days
+        for candidate in daylight_by_day.get(day.isoformat(), [])
+        if candidate["provider"] == weather["provider"]
+    ]
+    containing_candidates = [
+        candidate
+        for candidate in candidates
+        if datetime.fromisoformat(candidate["sunrise_ts"])
+        <= reading_time
+        <= datetime.fromisoformat(candidate["sunset_ts"])
+    ]
+    same_day_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["day"] == reading_time.date().isoformat()
+    ]
+    relevant_candidates = (
+        containing_candidates
+        or same_day_candidates
+        or candidates
+    )
+    closest = min(
+        relevant_candidates,
+        key=lambda candidate: (
+            (candidate["latitude"] - weather["latitude"]) ** 2
+            + (candidate["longitude"] - weather["longitude"]) ** 2
+        ),
+        default=None
+    )
+    if closest is None or not (
+        abs(closest["latitude"] - weather["latitude"]) < 0.1
+        and abs(closest["longitude"] - weather["longitude"]) < 0.1
+    ):
+        return None
+
+    return {
+        "sunrise_ts": closest["sunrise_ts"],
+        "sunset_ts": closest["sunset_ts"]
+    }
 
 
 def ensure_weather_schema():
@@ -44,6 +101,19 @@ def ensure_weather_schema():
             );
             CREATE INDEX IF NOT EXISTS idx_weather_observation_time
             ON weather_observation(observed_ts);
+            CREATE TABLE IF NOT EXISTS weather_daylight (
+                daylight_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                day DATE NOT NULL,
+                sunrise_ts DATETIME NOT NULL,
+                sunset_ts DATETIME NOT NULL,
+                insert_ts DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                provider TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                UNIQUE(provider, day, latitude, longitude)
+            );
+            CREATE INDEX IF NOT EXISTS idx_weather_daylight_day
+            ON weather_daylight(day);
             CREATE TABLE IF NOT EXISTS app_setting (
                 setting_key TEXT PRIMARY KEY,
                 setting_value TEXT NOT NULL
@@ -110,23 +180,41 @@ MEASUREMENT_DESCRIPTIONS = {
         "can precede unsettled weather."
     ),
     "bme688_gas_resistance_ohms": (
-        "BME688 gas resistance reflects how the sensor's heated surface "
-        "responds to volatile gases. Use changes as an air-quality trend, "
-        "not as a gas concentration or safety alarm."
+        "The BME688 is a broad air-quality sensor. Its heated sensing surface "
+        "changes electrical resistance when exposed to mixtures of volatile "
+        "organic compounds and other gases, but it cannot identify a specific "
+        "chemical or report a concentration. Cooking, cleaners, fragrances, "
+        "humidity, temperature, and sensor warm-up can all move the reading. "
+        "Treat departures from this sensor's own normal baseline as relative "
+        "air-quality clues only. This is not a smoke, carbon-monoxide, natural-"
+        "gas, or life-safety alarm."
     ),
     "mics6814_reducing_ohms": (
-        "Reducing-gas resistance responds to gases such as carbon monoxide, "
-        "hydrogen, and some volatile organic compounds. It shows relative "
-        "change, not a calibrated concentration or safety alarm."
+        "The MiCS-6814 reducing channel can respond to carbon monoxide, "
+        "hydrogen, ethanol, and other reducing gases. It is cross-sensitive, "
+        "so this graph cannot identify which gas caused a change or convert "
+        "resistance into a trustworthy ppm concentration without controlled "
+        "calibration and environmental compensation. Carbon monoxide can be "
+        "deadly, but this channel must never replace a listed carbon-monoxide "
+        "alarm. Use it only for relative comparisons with this sensor's own "
+        "baseline."
     ),
     "mics6814_oxidising_ohms": (
-        "Oxidising-gas resistance responds to gases such as nitrogen dioxide. "
-        "It shows relative change, not a calibrated concentration or safety alarm."
+        "The MiCS-6814 oxidising channel is sensitive to oxidising gases such "
+        "as nitrogen dioxide and can also react to other chemicals and changing "
+        "environmental conditions. Nitrogen dioxide can irritate and damage "
+        "the respiratory system, but resistance alone does not establish a "
+        "gas identity or safe exposure level. Use changes relative to this "
+        "sensor's normal baseline for investigation, not as a safety alarm."
     ),
     "mics6814_nh3_ohms": (
-        "The NH3-sensitive resistance channel responds strongly to ammonia "
-        "and can also respond to other gases. It shows relative change, not "
-        "a calibrated concentration or safety alarm."
+        "The MiCS-6814 NH3 channel is designed to respond strongly to ammonia, "
+        "but it is also cross-sensitive to other gases and affected by its "
+        "environment. Ammonia can irritate or burn the eyes, skin, and lungs "
+        "at hazardous concentrations; this resistance reading cannot determine "
+        "that concentration or confirm safety. Use only relative changes from "
+        "this sensor's own baseline and rely on appropriate calibrated detectors "
+        "for exposure or emergency decisions."
     )
 }
 
@@ -716,7 +804,17 @@ def get_additional_measurement_history(sensor_id, range_name):
             (sensor_id, sensor_id, modifier, bucket_seconds)
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    measurements = []
+
+    for row in rows:
+        measurement = dict(row)
+        measurement["description"] = get_measurement_description(
+            measurement["key"],
+            measurement["label"]
+        )
+        measurements.append(measurement)
+
+    return measurements
 
 
 def get_temperature_comparison(range_name):
@@ -814,3 +912,262 @@ def add_outdoor_comparison(readings):
         reading["outdoor_dew_point_c"] = nearest["dew_point_c"]
 
     return readings
+
+
+def get_correlation_observations(sensor_id, range_name):
+        modifier = INSIGHT_RANGES[range_name]
+        ensure_weather_schema()
+        ensure_measurement_schema()
+
+        with get_connection() as conn:
+            indoor_rows = conn.execute(
+                """
+                WITH latest AS
+                (
+                    SELECT MAX(COALESCE(pico_ts, insert_ts)) AS latest_ts
+                    FROM sensor_reading
+                    WHERE sensor_id = ?
+                ), bucketed AS
+                (
+                    SELECT
+                        CAST(
+                            strftime(
+                                '%s',
+                                replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                            ) AS INTEGER
+                        ) / ? AS bucket,
+                        AVG(r.temperature_c) AS temperature_c,
+                        AVG(r.humidity_pct) AS humidity_pct,
+                        AVG(r.pressure_hpa) AS pressure_hpa
+                    FROM sensor_reading AS r
+                    CROSS JOIN latest
+                    WHERE r.sensor_id = ?
+                      AND datetime(
+                            replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                          ) >= datetime(
+                            replace(latest.latest_ts, 'T', ' '), ?
+                          )
+                    GROUP BY bucket
+                )
+                SELECT
+                    datetime(bucket * ?, 'unixepoch') AS reading_time,
+                    temperature_c,
+                    humidity_pct,
+                    pressure_hpa
+                FROM bucketed
+                ORDER BY reading_time
+                """,
+                (
+                    sensor_id,
+                    INSIGHT_BUCKET_SECONDS,
+                    sensor_id,
+                    modifier,
+                    INSIGHT_BUCKET_SECONDS
+                )
+            ).fetchall()
+
+            measurement_rows = conn.execute(
+                """
+                WITH latest AS
+                (
+                    SELECT MAX(COALESCE(pico_ts, insert_ts)) AS latest_ts
+                    FROM sensor_reading
+                    WHERE sensor_id = ?
+                ), bucketed AS
+                (
+                    SELECT
+                        CAST(
+                            strftime(
+                                '%s',
+                                replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                            ) AS INTEGER
+                        ) / ? AS bucket,
+                        sm.measurement_key AS key,
+                        md.label,
+                        md.unit,
+                        md.display_order,
+                        AVG(sm.measurement_value) AS value
+                    FROM sensor_measurement AS sm
+                    JOIN sensor_reading AS r ON r.reading_id = sm.reading_id
+                    JOIN measurement_definition AS md
+                        ON md.measurement_key = sm.measurement_key
+                    CROSS JOIN latest
+                    WHERE r.sensor_id = ?
+                      AND sm.measurement_key NOT IN
+                          ('temperature_c', 'humidity_pct', 'pressure_hpa')
+                      AND datetime(
+                            replace(COALESCE(r.pico_ts, r.insert_ts), 'T', ' ')
+                          ) >= datetime(
+                            replace(latest.latest_ts, 'T', ' '), ?
+                          )
+                    GROUP BY bucket, sm.measurement_key
+                )
+                SELECT
+                    datetime(bucket * ?, 'unixepoch') AS reading_time,
+                    key,
+                    label,
+                    unit,
+                    display_order,
+                    value
+                FROM bucketed
+                ORDER BY display_order, reading_time
+                """,
+                (
+                    sensor_id,
+                    INSIGHT_BUCKET_SECONDS,
+                    sensor_id,
+                    modifier,
+                    INSIGHT_BUCKET_SECONDS
+                )
+            ).fetchall()
+
+            if indoor_rows:
+                weather_rows = conn.execute(
+                    """
+                    SELECT
+                        observed_ts,
+                        provider,
+                        latitude,
+                        longitude,
+                        temperature_c,
+                        humidity_pct,
+                        dew_point_c,
+                        pressure_hpa,
+                        precipitation_mm,
+                        wind_speed_kmh,
+                        cloud_cover_pct
+                    FROM weather_observation
+                    WHERE datetime(observed_ts)
+                        BETWEEN datetime(?, '-30 minutes')
+                            AND datetime(?, '+30 minutes')
+                    ORDER BY observed_ts
+                    """,
+                    (
+                        indoor_rows[0]["reading_time"],
+                        indoor_rows[-1]["reading_time"]
+                    )
+                ).fetchall()
+                daylight_rows = conn.execute(
+                    """
+                    SELECT
+                        day,
+                        sunrise_ts,
+                        sunset_ts,
+                        provider,
+                        latitude,
+                        longitude
+                    FROM weather_daylight
+                    WHERE date(day) BETWEEN date(?, '-1 day') AND date(?)
+                    ORDER BY day
+                    """,
+                    (
+                        indoor_rows[0]["reading_time"],
+                        indoor_rows[-1]["reading_time"]
+                    )
+                ).fetchall()
+            else:
+                weather_rows = []
+                daylight_rows = []
+
+        indoor_metrics = {
+            "temperature_c": {
+                "label": "Indoor temperature",
+                "unit": "°C",
+                "display_order": 10
+            },
+            "humidity_pct": {
+                "label": "Indoor humidity",
+                "unit": "%",
+                "display_order": 20
+            },
+            "pressure_hpa": {
+                "label": "Indoor pressure",
+                "unit": "hPa",
+                "display_order": 30
+            }
+        }
+        measurements_by_time = {}
+
+        for row in measurement_rows:
+            key = row["key"]
+            indoor_metrics[key] = {
+                "label": row["label"],
+                "unit": row["unit"],
+                "display_order": row["display_order"]
+            }
+            measurements_by_time.setdefault(row["reading_time"], {})[key] = row["value"]
+
+        weather = [dict(row) for row in weather_rows]
+        weather_times = [
+            datetime.fromisoformat(row["observed_ts"])
+            for row in weather
+        ]
+        daylight_by_day = {}
+        for row in daylight_rows:
+            daylight_by_day.setdefault(row["day"], []).append(dict(row))
+        observations = []
+
+        for row in indoor_rows:
+            reading_time = datetime.fromisoformat(row["reading_time"])
+            insertion_point = bisect_left(weather_times, reading_time)
+            candidate_indexes = (
+                insertion_point - 1,
+                insertion_point
+            )
+            nearest = min(
+                (
+                    weather[index]
+                    for index in candidate_indexes
+                    if 0 <= index < len(weather)
+                ),
+                key=lambda item: abs(
+                    datetime.fromisoformat(item["observed_ts"]) - reading_time
+                ),
+                default=None
+            )
+            outdoor = None
+            daylight = None
+
+            if nearest is not None and abs(
+                datetime.fromisoformat(nearest["observed_ts"]) - reading_time
+            ).total_seconds() <= 1800:
+                outdoor = {
+                    key: nearest[key]
+                    for key in (
+                        "temperature_c",
+                        "humidity_pct",
+                        "dew_point_c",
+                        "pressure_hpa",
+                        "precipitation_mm",
+                        "wind_speed_kmh",
+                        "cloud_cover_pct"
+                    )
+                }
+                daylight = match_daylight(
+                    daylight_by_day,
+                    reading_time,
+                    nearest
+                )
+
+            indoor = {
+                "temperature_c": row["temperature_c"],
+                "humidity_pct": row["humidity_pct"],
+                "pressure_hpa": row["pressure_hpa"]
+            }
+            indoor.update(measurements_by_time.get(row["reading_time"], {}))
+            observations.append({
+                "reading_time": row["reading_time"],
+                "indoor": indoor,
+                "outdoor": outdoor,
+                "daylight": daylight
+            })
+
+        return {
+            "observations": observations,
+            "indoor_metrics": indoor_metrics,
+            "sensor_bucket_count": len(indoor_rows),
+            "aligned_bucket_count": sum(
+                observation["outdoor"] is not None
+                for observation in observations
+            )
+        }

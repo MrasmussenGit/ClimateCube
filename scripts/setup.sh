@@ -34,6 +34,7 @@ sudo apt install -y \
     mosquitto \
     mosquitto-clients \
     python3-venv \
+    openssh-client \
     avahi-daemon
 
     echo
@@ -263,6 +264,8 @@ echo "Mosquitto:     $(systemctl is-active mosquitto)"
 echo "MQTT Listener: $(systemctl is-active climatecube-listener)"
 echo "Web Server:    $(systemctl is-active climatecube-web)"
 echo "Weather:       $(systemctl is-active climatecube-weather)"
+echo
+echo "Off-device backups are opt-in. See README.md for SSH backup setup."
 
 echo
 echo "===================================="
